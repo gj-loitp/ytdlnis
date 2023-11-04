@@ -1,15 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        android:widgetLayout="@layout/preferece_material_switch"
+        app:defaultValue="true"
+        app:icon="@drawable/ic_money"
+        app:key="use_sponsorblock"
+        app:title="@string/use_sponsorblock" />
+
     <MultiSelectListPreference
         app:defaultValue="@array/sponsorblock_settings_default"
         app:icon="@drawable/ic_money"
+        android:dependency="use_sponsorblock"
         app:dialogTitle="@string/select_sponsorblock_filtering"
         app:entries="@array/sponsorblock_settings_entries"
         app:entryValues="@array/sponsorblock_settings_values"
         app:key="sponsorblock_filters"
         app:summary="@string/select_sponsorblock_filtering"
         app:title="SponsorBlock" />
+
+    <EditTextPreference
+        android:dependency="use_sponsorblock"
+        app:icon="@drawable/ic_money"
+        app:key="sponsorblock_url"
+        app:useSimpleSummaryProvider="true"
+        app:defaultValue=""
+        app:title="@string/sponsorblock_api_url" />
 
 
     <SwitchPreferenceCompat
@@ -48,14 +65,14 @@
         android:icon="@drawable/baseline_subject_24"
         app:key="subs_lang"
         app:useSimpleSummaryProvider="true"
-        app:defaultValue="all"
+        app:defaultValue="en.*,.*-orig"
         app:title="@string/subtitle_languages" />
 
 
     <ListPreference
         android:defaultValue="srt"
         android:entries="@array/sub_formats"
-        android:entryValues="@array/sub_formats"
+        android:entryValues="@array/sub_formats_values"
         android:icon="@drawable/baseline_format_quote_24"
         app:key="sub_format"
         app:useSimpleSummaryProvider="true"
@@ -131,6 +148,22 @@
         app:useSimpleSummaryProvider="true"
         app:title="@string/video_format" />
 
+    <ListPreference
+        android:defaultValue="avc|h264"
+        android:entries="@array/video_codec"
+        android:entryValues="@array/video_codec_values"
+        android:icon="@drawable/ic_code"
+        app:key="video_codec"
+        app:title="@string/preferred_video_codec" />
+
+    <ListPreference
+        android:defaultValue="m4a|mp4a|aac"
+        android:entries="@array/audio_codec"
+        android:entryValues="@array/audio_codec_values"
+        android:icon="@drawable/ic_code"
+        app:key="audio_codec"
+        app:title="@string/preferred_audio_codec" />
+
     <SwitchPreferenceCompat
         android:widgetLayout="@layout/preferece_material_switch"
         app:defaultValue="false"
@@ -172,15 +205,10 @@
 
     <SwitchPreferenceCompat
         android:widgetLayout="@layout/preferece_material_switch"
-        app:defaultValue="false"
+        app:defaultValue="true"
         app:icon="@drawable/ic_terminal"
         app:key="use_extra_commands"
         android:summary="@string/use_extra_commands_summary"
         app:title="@string/use_extra_commands" />
-
-    <Preference
-        app:isPreferenceVisible="false"
-        android:key="use_cookies"
-        android:defaultValue="false" />
 
 </PreferenceScreen>

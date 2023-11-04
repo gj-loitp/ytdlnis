@@ -7,19 +7,27 @@ import android.app.PendingIntent
 import android.app.TaskStackBuilder
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
+import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.DisplayMetrics
 import androidx.core.app.NotificationCompat
 import androidx.core.content.FileProvider
+import androidx.documentfile.provider.DocumentFile
 import androidx.navigation.NavDeepLinkBuilder
+import androidx.preference.PreferenceManager
 import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.receiver.CancelDownloadNotificationReceiver
+import com.deniscerri.ytdlnis.receiver.CancelWorkReceiver
 import com.deniscerri.ytdlnis.receiver.PauseDownloadNotificationReceiver
 import com.deniscerri.ytdlnis.receiver.ResumeActivity
 import com.deniscerri.ytdlnis.receiver.ShareFileActivity
 import java.io.File
-import kotlin.math.log
+import java.util.Locale
 
 
 class NotificationUtil(var context: Context) {
@@ -27,6 +35,15 @@ class NotificationUtil(var context: Context) {
     private val commandDownloadNotificationBuilder: NotificationCompat.Builder = NotificationCompat.Builder(context, COMMAND_DOWNLOAD_SERVICE_CHANNEL_ID)
     private val finishedDownloadNotificationBuilder: NotificationCompat.Builder = NotificationCompat.Builder(context, DOWNLOAD_FINISHED_CHANNEL_ID)
     private val notificationManager: NotificationManager = context.getSystemService(NotificationManager::class.java)
+    private val resources: Resources
+    private var sharedPreferences: SharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
+
+    init {
+        val confTmp = Configuration(context.resources.configuration)
+        confTmp.setLocale(Locale(sharedPreferences.getString("app_language", "en")!!))
+        val metrics = DisplayMetrics()
+        resources = Resources(context.assets, metrics, confTmp)
+    }
 
     fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -34,32 +51,39 @@ class NotificationUtil(var context: Context) {
                 NotificationManager::class.java
             )
 
-            //gui downloads
-            var name: CharSequence = context.getString(R.string.download_notification_channel_name)
-            var description = context.getString(R.string.download_notification_channel_description)
+            //downloading worker notification
+            var name: CharSequence = resources.getString(R.string.downloading)
+            var description = "WorkManager Default Notification"
             val importance = NotificationManager.IMPORTANCE_LOW
-            var channel = NotificationChannel(DOWNLOAD_SERVICE_CHANNEL_ID, name, importance)
+            var channel = NotificationChannel(DOWNLOAD_WORKER_CHANNEL_ID, name, importance)
+            channel.description = description
+            notificationManager.createNotificationChannel(channel)
+
+            //gui downloads
+            name = resources.getString(R.string.download_notification_channel_name)
+            description = resources.getString(R.string.download_notification_channel_description)
+            channel = NotificationChannel(DOWNLOAD_SERVICE_CHANNEL_ID, name, importance)
             channel.description = description
             notificationManager.createNotificationChannel(channel)
 
             //command downloads
-            name = context.getString(R.string.command_download_notification_channel_name)
+            name = resources.getString(R.string.command_download_notification_channel_name)
             description =
-                context.getString(R.string.command_download_notification_channel_description)
+                resources.getString(R.string.command_download_notification_channel_description)
             channel = NotificationChannel(COMMAND_DOWNLOAD_SERVICE_CHANNEL_ID, name, importance)
             channel.description = description
             notificationManager.createNotificationChannel(channel)
 
             //finished or errored downloads
-            name = context.getString(R.string.finished_download_notification_channel_name)
+            name = resources.getString(R.string.finished_download_notification_channel_name)
             description =
-                context.getString(R.string.finished_download_notification_channel_description)
+                resources.getString(R.string.finished_download_notification_channel_description)
             channel = NotificationChannel(DOWNLOAD_FINISHED_CHANNEL_ID, name, NotificationManager.IMPORTANCE_HIGH)
             channel.description = description
             notificationManager.createNotificationChannel(channel)
 
             //misc
-            name = context.getString(R.string.misc)
+            name = resources.getString(R.string.misc)
             description = ""
             channel = NotificationChannel(DOWNLOAD_MISC_CHANNEL_ID, name, NotificationManager.IMPORTANCE_HIGH)
             channel.description = description
@@ -76,34 +100,34 @@ class NotificationUtil(var context: Context) {
         return downloadNotificationBuilder
     }
 
+    fun createDefaultWorkerNotification() : Notification {
+        val notificationBuilder = getBuilder(DOWNLOAD_WORKER_CHANNEL_ID)
+
+        return notificationBuilder
+            .setContentTitle(resources.getString(R.string.downloading))
+            .setOngoing(true)
+            .setSmallIcon(R.drawable.ic_launcher_foreground_large)
+            .setLargeIcon(
+                BitmapFactory.decodeResource(
+                    resources,
+                    R.drawable.ic_launcher_foreground_large
+                )
+            )
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .clearActions()
+            .build()
+    }
 
     fun createDownloadServiceNotification(
         pendingIntent: PendingIntent?,
         title: String?,
-        workID: Int,
-        channel: String
+        itemID: Int,
     ): Notification {
-        val notificationBuilder = getBuilder(channel)
+        val notificationBuilder = getBuilder(DOWNLOAD_SERVICE_CHANNEL_ID)
 
-        val pauseIntent = Intent(context, PauseDownloadNotificationReceiver::class.java)
-        pauseIntent.putExtra("workID", workID)
-        pauseIntent.putExtra("title", title)
-        val pauseNotificationPendingIntent = PendingIntent.getBroadcast(
-            context,
-            workID,
-            pauseIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
 
-        val cancelIntent = Intent(context, CancelDownloadNotificationReceiver::class.java)
-        cancelIntent.putExtra("cancel", "")
-        cancelIntent.putExtra("workID", workID)
-        val cancelNotificationPendingIntent = PendingIntent.getBroadcast(
-            context,
-            workID,
-            cancelIntent,
-            PendingIntent.FLAG_IMMUTABLE
-        )
         return notificationBuilder
             .setContentTitle(title)
             .setOngoing(true)
@@ -111,7 +135,7 @@ class NotificationUtil(var context: Context) {
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     android.R.drawable.stat_sys_download
                 )
             )
@@ -122,20 +146,18 @@ class NotificationUtil(var context: Context) {
             .setContentIntent(pendingIntent)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .clearActions()
-            .addAction(0, context.getString(R.string.pause), pauseNotificationPendingIntent)
-            .addAction(0, context.getString(R.string.cancel), cancelNotificationPendingIntent)
             .build()
     }
 
-    fun createResumeDownload(workID: Int, title: String?, channel: String){
-        val notificationBuilder = getBuilder(channel)
+    fun createResumeDownload(itemID: Int, title: String?){
+        val notificationBuilder = getBuilder(DOWNLOAD_SERVICE_CHANNEL_ID)
 
         notificationBuilder
             .setContentTitle(title)
             .setSmallIcon(R.drawable.ic_launcher_foreground_large)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     R.drawable.ic_launcher_foreground_large
                 )
             )
@@ -144,27 +166,27 @@ class NotificationUtil(var context: Context) {
             .clearActions()
 
         val intent = Intent(context, ResumeActivity::class.java)
-        intent.putExtra("workID", workID)
+        intent.putExtra("itemID", itemID)
         val resumeNotificationPendingIntent = PendingIntent.getActivity(
             context,
-            workID,
+            itemID,
             intent,
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        notificationBuilder.addAction(0, context.getString(R.string.resume), resumeNotificationPendingIntent)
-        notificationManager.notify(DOWNLOAD_RESUME_NOTIFICATION_ID, notificationBuilder.build())
+        notificationBuilder.addAction(0, resources.getString(R.string.resume), resumeNotificationPendingIntent)
+        notificationManager.notify(DOWNLOAD_RESUME_NOTIFICATION_ID + itemID, notificationBuilder.build())
     }
 
     fun createUpdatingItemNotification(channel: String){
         val notificationBuilder = getBuilder(channel)
 
         notificationBuilder
-            .setContentTitle(context.getString(R.string.updating_download_data))
+            .setContentTitle(resources.getString(R.string.updating_download_data))
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     android.R.drawable.stat_sys_download
                 )
             )
@@ -174,43 +196,56 @@ class NotificationUtil(var context: Context) {
         notificationManager.notify(DOWNLOAD_UPDATING_NOTIFICATION_ID, notificationBuilder.build())
     }
 
-    fun createDownloadFinished(title: String?,
-        filepath: List<String>?,
-        channel: String
+    fun createDownloadFinished(
+        title: String?,
+        filepath: List<String>?
     ) {
-        val notificationBuilder = getBuilder(channel)
+        val notificationBuilder = getBuilder(DOWNLOAD_FINISHED_CHANNEL_ID)
 
         notificationBuilder
-            .setContentTitle("${context.getString(R.string.downloaded)} $title")
+            .setContentTitle("${resources.getString(R.string.downloaded)} $title")
             .setSmallIcon(R.drawable.ic_launcher_foreground_large)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     R.drawable.ic_launcher_foreground_large
                 )
             )
+            .setContentText("")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .clearActions()
         if (filepath != null){
             try{
-                val file = File(filepath.first())
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "com.deniscerri.ytdl.fileprovider",
-                    file
-                )
+                val uri = filepath.first().runCatching {
+                    DocumentFile.fromSingleUri(context, Uri.parse(filepath.first())).run{
+                        if (this?.exists() == true){
+                            this.uri
+                        }else if (File(this@runCatching).exists()){
+                            FileProvider.getUriForFile(context, context.packageName + ".fileprovider",
+                                File(this@runCatching))
+                        }else null
+                    }
+                }.getOrNull()
 
-                //open intent
-                val intent = Intent()
-                intent.action = Intent.ACTION_VIEW
-                intent.setDataAndType(uri, "*/*")
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val openFileIntent = Intent()
+
+                if (uri != null){
+                    openFileIntent.apply {
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        action = Intent.ACTION_VIEW
+                        data = uri
+                    }
+                }
+
                 val openNotificationPendingIntent: PendingIntent = TaskStackBuilder.create(context).run {
-                    addNextIntentWithParentStack(intent)
+                    addNextIntentWithParentStack(openFileIntent)
                     getPendingIntent(0,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 }
+
+
 
                 //share intent
                 val shareIntent = Intent(context, ShareFileActivity::class.java)
@@ -223,8 +258,8 @@ class NotificationUtil(var context: Context) {
                     PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
                 )
 
-                notificationBuilder.addAction(0, context.getString(R.string.Open_File), openNotificationPendingIntent)
-                notificationBuilder.addAction(0, context.getString(R.string.share), shareNotificationPendingIntent)
+                notificationBuilder.addAction(0, resources.getString(R.string.Open_File), openNotificationPendingIntent)
+                notificationBuilder.addAction(0, resources.getString(R.string.share), shareNotificationPendingIntent)
             }catch (_: Exception){}
         }
         notificationManager.notify(DOWNLOAD_FINISHED_NOTIFICATION_ID, notificationBuilder.build())
@@ -258,12 +293,12 @@ class NotificationUtil(var context: Context) {
             .createPendingIntent()
 
         notificationBuilder
-            .setContentTitle("${context.getString(R.string.failed_download)}: $title")
+            .setContentTitle("${resources.getString(R.string.failed_download)}: $title")
             .setContentText(error)
             .setSmallIcon(R.drawable.ic_launcher_foreground_large)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     R.drawable.ic_launcher_foreground_large
                 )
             )
@@ -273,9 +308,14 @@ class NotificationUtil(var context: Context) {
             .clearActions()
         if (logID != null){
             notificationBuilder.setContentIntent(errorPendingIntent)
-            notificationBuilder.addAction(0, context.getString(R.string.logs), errorPendingIntent)
+            notificationBuilder.addAction(0, resources.getString(R.string.logs), errorPendingIntent)
         }
         notificationManager.notify(DOWNLOAD_FINISHED_NOTIFICATION_ID, notificationBuilder.build())
+    }
+
+
+    fun notify(id: Int, notification: Notification){
+        notificationManager.notify(id, notification)
     }
 
     fun updateDownloadNotification(
@@ -289,12 +329,67 @@ class NotificationUtil(var context: Context) {
 
         val notificationBuilder = getBuilder(channel)
         var contentText = ""
-        if (queue > 1) contentText += """${queue - 1} ${context.getString(R.string.items_left)}""" + "\n"
+        if (queue > 1) contentText += """${queue - 1} ${resources.getString(R.string.items_left)}""" + "\n"
         contentText += desc.replace("\\[.*?\\] ".toRegex(), "")
+
+        val pauseIntent = Intent(context, PauseDownloadNotificationReceiver::class.java)
+        pauseIntent.putExtra("itemID", id)
+        pauseIntent.putExtra("title", title)
+        val pauseNotificationPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id,
+            pauseIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val cancelIntent = Intent(context, CancelDownloadNotificationReceiver::class.java)
+        cancelIntent.putExtra("itemID", id)
+        val cancelNotificationPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id,
+            cancelIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
         try {
             notificationBuilder.setProgress(100, progress, false)
                 .setContentTitle(title)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+                .clearActions()
+                .addAction(0, resources.getString(R.string.pause), pauseNotificationPendingIntent)
+                .addAction(0, resources.getString(R.string.cancel), cancelNotificationPendingIntent)
+            notificationManager.notify(id, notificationBuilder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+    fun updateTerminalDownloadNotification(
+        id: Int,
+        desc: String,
+        progress: Int,
+        title: String?,
+        channel : String
+    ) {
+
+        val notificationBuilder = getBuilder(channel)
+        var contentText = ""
+        contentText += desc.replace("\\[.*?\\] ".toRegex(), "")
+
+        val cancelIntent = Intent(context, CancelDownloadNotificationReceiver::class.java)
+        cancelIntent.putExtra("itemID", id)
+        val cancelNotificationPendingIntent = PendingIntent.getBroadcast(
+            context,
+            id,
+            cancelIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            notificationBuilder.setProgress(100, progress, false)
+                .setContentTitle(title)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+                .clearActions()
+                .addAction(0, resources.getString(R.string.cancel), cancelNotificationPendingIntent)
             notificationManager.notify(id, notificationBuilder.build())
         } catch (e: Exception) {
             e.printStackTrace()
@@ -309,13 +404,13 @@ class NotificationUtil(var context: Context) {
         val notificationBuilder = getBuilder(downloadMiscChannelId)
 
         return notificationBuilder
-            .setContentTitle(context.getString(R.string.move_temporary_files))
+            .setContentTitle(resources.getString(R.string.move_temporary_files))
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setLargeIcon(
                 BitmapFactory.decodeResource(
-                    context.resources,
+                    resources,
                     android.R.drawable.stat_sys_download
                 )
             )
@@ -334,7 +429,7 @@ class NotificationUtil(var context: Context) {
         val contentText = "${progress}/${totalFiles}"
         try {
             notificationBuilder.setProgress(100, progress, false)
-                .setContentTitle(context.getString(R.string.move_temporary_files))
+                .setContentTitle(resources.getString(R.string.move_temporary_files))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             notificationManager.notify(id, notificationBuilder.build())
         } catch (e: Exception) {
@@ -342,10 +437,109 @@ class NotificationUtil(var context: Context) {
         }
     }
 
-    fun showYTDLUpdateNotification() : Notification{
+    fun createYTDLUpdateNotification() : Notification{
         val notificationBuilder = getBuilder(DOWNLOAD_MISC_CHANNEL_ID)
         notificationBuilder.setContentTitle("Updating YT-DLP...")
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_EVENT)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setLargeIcon(
+                BitmapFactory.decodeResource(
+                    resources,
+                    android.R.drawable.stat_sys_download
+                )
+            )
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .clearActions()
         return notificationBuilder.build()
+    }
+
+    fun createFormatsUpdateNotification(): Notification {
+        val notificationBuilder = getBuilder(DOWNLOAD_MISC_CHANNEL_ID)
+        return notificationBuilder
+            .setContentTitle(resources.getString(R.string.update_formats_background))
+            .setOngoing(true)
+            .setCategory(Notification.CATEGORY_PROGRESS)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setLargeIcon(
+                BitmapFactory.decodeResource(
+                    resources,
+                    android.R.drawable.stat_sys_download
+                )
+            )
+            .setContentText("")
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setProgress(PROGRESS_MAX, PROGRESS_CURR, false)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .clearActions()
+            .build()
+    }
+
+    fun updateFormatUpdateNotification(
+        workID: Int,
+        workTag: String,
+        progress: Int,
+        queue: Int,
+    ) {
+
+        val notificationBuilder = getBuilder(DOWNLOAD_MISC_CHANNEL_ID)
+        val contentText = """${queue - progress} ${resources.getString(R.string.items_left)}"""
+
+
+        val cancelIntent = Intent(context, CancelWorkReceiver::class.java)
+        cancelIntent.putExtra("workTag", workTag)
+        val cancelNotificationPendingIntent = PendingIntent.getBroadcast(
+            context,
+            workID,
+            cancelIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+
+        try {
+            notificationBuilder.setProgress(queue, progress, false)
+                .setContentTitle(resources.getString(R.string.update_formats_background))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+                .clearActions()
+                .addAction(0, resources.getString(R.string.cancel), cancelNotificationPendingIntent)
+            notificationManager.notify(workID, notificationBuilder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+
+    fun showFormatsUpdatedNotification(downloadIds: List<Long>) {
+        val notificationBuilder = getBuilder(DOWNLOAD_FINISHED_CHANNEL_ID)
+
+        val bundle = Bundle()
+        bundle.putBoolean("showDownloadsWithUpdatedFormats", true)
+        bundle.putLongArray("downloadIds", downloadIds.toLongArray())
+
+        val openMultipleDownloads = NavDeepLinkBuilder(context)
+            .setGraph(R.navigation.nav_graph)
+            .setDestination(R.id.homeFragment)
+            .setArguments(bundle)
+            .createPendingIntent()
+
+        notificationBuilder
+            .setContentTitle(resources.getString(R.string.finished_download_notification_channel_name))
+            .setSmallIcon(R.drawable.ic_launcher_foreground_large)
+            .setLargeIcon(
+                BitmapFactory.decodeResource(
+                    resources,
+                    R.drawable.ic_launcher_foreground_large
+                )
+            )
+            .setContentIntent(openMultipleDownloads)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .clearActions()
+
+        notificationManager.notify(FORMAT_UPDATING_FINISHED_NOTIFICATION_ID, notificationBuilder.build())
     }
 
     companion object {
@@ -353,10 +547,13 @@ class NotificationUtil(var context: Context) {
         const val COMMAND_DOWNLOAD_SERVICE_CHANNEL_ID = "2"
         const val DOWNLOAD_FINISHED_CHANNEL_ID = "3"
         const val DOWNLOAD_FINISHED_NOTIFICATION_ID = 3
-        const val DOWNLOAD_RESUME_NOTIFICATION_ID = 4
+        const val DOWNLOAD_RESUME_NOTIFICATION_ID = 40000
         const val DOWNLOAD_UPDATING_NOTIFICATION_ID = 5
+        const val FORMAT_UPDATING_NOTIFICATION_ID = 6
+        const val FORMAT_UPDATING_FINISHED_NOTIFICATION_ID = 7
         const val DOWNLOAD_MISC_CHANNEL_ID = "4"
         const val DOWNLOAD_MISC_NOTIFICATION_ID = 4
+        const val DOWNLOAD_WORKER_CHANNEL_ID = "5"
         private const val PROGRESS_MAX = 100
         private const val PROGRESS_CURR = 0
     }

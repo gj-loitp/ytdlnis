@@ -7,22 +7,13 @@ import com.deniscerri.ytdlnis.database.models.Format
 import com.deniscerri.ytdlnis.database.models.VideoPreferences
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import java.lang.reflect.Type
 
 
 class Converters {
     @TypeConverter
-    fun stringToListOfFormats(value: String?): ArrayList<Format> {
-        val listType: Type = object : TypeToken<ArrayList<Format?>?>() {}.type
-        return Gson().fromJson(value, listType)
-    }
-
+    fun stringToListOfFormats(value: String) = Gson().fromJson(value, Array<Format>::class.java).toMutableList()
     @TypeConverter
-    fun listOfFormatsToString(list: ArrayList<Format?>?): String {
-        val gson = Gson()
-        return gson.toJson(list)
-    }
+    fun listOfFormatsToString(list: List<Format?>?) = Gson().toJson(list).toString()
 
     @TypeConverter
     fun formatToString(format: Format): String = Gson().toJson(format)
@@ -53,13 +44,10 @@ class Converters {
     fun stringToVideoPreferences(string: String): VideoPreferences = Gson().fromJson(string, VideoPreferences::class.java)
 
     @TypeConverter
-    fun stringToListOfChapters(value: String?): ArrayList<ChapterItem>? {
-        val listType: Type = object : TypeToken<ArrayList<ChapterItem?>?>() {}.type
-        return Gson().fromJson(value, listType)
-    }
+    fun stringToListOfChapters(value: String?) = Gson().fromJson(value, Array<ChapterItem>::class.java).toMutableList()
 
     @TypeConverter
-    fun listOfChaptersToString(list: ArrayList<ChapterItem?>?): String {
+    fun listOfChaptersToString(list: List<ChapterItem?>?): String {
         val gson = Gson()
         return gson.toJson(list)
     }

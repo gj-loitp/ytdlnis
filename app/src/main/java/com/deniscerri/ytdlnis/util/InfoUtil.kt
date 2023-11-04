@@ -2,18 +2,20 @@ package com.deniscerri.ytdlnis.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Resources
 import android.os.Looper
 import android.text.Html
 import android.util.Log
+import android.util.Patterns
 import android.widget.Toast
 import androidx.preference.PreferenceManager
+import com.afollestad.materialdialogs.utils.MDUtil.getStringArray
 import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.database.models.ChapterItem
 import com.deniscerri.ytdlnis.database.models.DownloadItem
 import com.deniscerri.ytdlnis.database.models.Format
 import com.deniscerri.ytdlnis.database.models.ResultItem
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
-import com.deniscerri.ytdlnis.work.DownloadWorker
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.yausername.youtubedl_android.YoutubeDL
@@ -32,7 +34,6 @@ import java.util.regex.Pattern
 
 
 class InfoUtil(private val context: Context) {
-    private var items: ArrayList<ResultItem?>
     private lateinit var sharedPreferences: SharedPreferences
 
     init {
@@ -43,31 +44,24 @@ class InfoUtil(private val context: Context) {
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        items = ArrayList()
     }
 
 
     fun search(query: String): ArrayList<ResultItem?> {
-        items = ArrayList()
-        return when(sharedPreferences.getString("search_engine", "ytsearch")){
-            "ytsearch" -> try{
-                searchFromPiped(query)
-            }catch (e: Exception){
-                getFromYTDL(query)
+        return runCatching {
+            when(sharedPreferences.getString("search_engine", "ytsearch")){
+                "ytsearch" -> searchFromPiped(query)
+                "ytsearchmusic" -> searchFromPipedMusic(query)
+                else -> throw Exception()
             }
-
-            "ytsearchmusic" -> try{
-                searchFromPipedMusic(query)
-            }catch (e: Exception){
-                getFromYTDL(query)
-            }
-
-            else -> getFromYTDL(query)
+        }.getOrElse {
+            getFromYTDL(query)
         }
     }
 
     @Throws(JSONException::class)
     fun searchFromPiped(query: String): ArrayList<ResultItem?> {
+        val items = arrayListOf<ResultItem?>()
         val data = genericRequest("$pipedURL/search?q=$query&filter=videos&region=${countryCODE}")
         val dataArray = data.getJSONArray("items")
         if (dataArray.length() == 0) return getFromYTDL(query)
@@ -86,6 +80,7 @@ class InfoUtil(private val context: Context) {
 
     @Throws(JSONException::class)
     fun searchFromPipedMusic(query: String): ArrayList<ResultItem?> {
+        val items = arrayListOf<ResultItem?>()
         val data = genericRequest("$pipedURL/search?q=$query=&filter=music_songs&region=${countryCODE}")
         val dataArray = data.getJSONArray("items")
         if (dataArray.length() == 0) return getFromYTDL(query)
@@ -105,7 +100,7 @@ class InfoUtil(private val context: Context) {
     @Throws(JSONException::class)
     fun getPlaylist(id: String, nextPageToken: String): PlaylistTuple {
         try{
-            items = ArrayList()
+            val items = arrayListOf<ResultItem?>()
             // -------------- PIPED API FUNCTION -------------------
             var url = ""
             url = if (nextPageToken.isBlank()) "$pipedURL/playlists/$id"
@@ -119,7 +114,7 @@ class InfoUtil(private val context: Context) {
             for (i in 0 until dataArray.length()){
                 val obj = dataArray.getJSONObject(i)
                 val itm = createVideoFromPipedJSON(obj, "https://youtube.com" + obj.getString("url"))
-                itm?.playlistTitle = "YTDLnis"
+                itm?.playlistTitle = res.getString("name") + "[${i+1}]"
                 items.add(itm)
             }
             if (nextpage == "null") nextpage = ""
@@ -134,13 +129,14 @@ class InfoUtil(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getYoutubeVideo(url: String): List<ResultItem?> {
+        val theURL = url.replace("\\?list.*".toRegex(), "")
         return try {
-            val id = getIDFromYoutubeURL(url)
+            val id = getIDFromYoutubeURL(theURL)
             val res = genericRequest("$pipedURL/streams/$id")
-            if (res.length() == 0) getFromYTDL(url) else listOf(createVideoFromPipedJSON(res, url))
+            if (res.length() == 0) getFromYTDL(theURL) else listOf(createVideoFromPipedJSON(res, theURL))
         }catch (e: Exception){
-            val v = getFromYTDL(url)
-            v.forEach { it!!.url = url }
+            val v = getFromYTDL(theURL)
+            v.forEach { it!!.url = theURL }
             v
         }
     }
@@ -225,7 +221,6 @@ class InfoUtil(private val context: Context) {
                     }
 
                 }
-                formats.sortBy { it.filesize }
                 formats.groupBy { it.format_id }.forEach {
                     if (it.value.count() > 1) {
                         it.value.filter { f-> !f.format_note.contains("original", true) }.forEachIndexed { index, format -> format.format_id = format.format_id.split("-")[0] + "-${index}" }
@@ -233,6 +228,7 @@ class InfoUtil(private val context: Context) {
                         engDefault?.format_id = (engDefault?.format_id?.split("-")?.get(0) ?: "") + "-${it.value.size-1}"
                     }
                 }
+                formats.sortByDescending { it.filesize }
             }
 
             val chapters = ArrayList<ChapterItem>()
@@ -349,7 +345,6 @@ class InfoUtil(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getTrending(): ArrayList<ResultItem?> {
-        items = ArrayList()
         if (sharedPreferences.getString("api_key", "")!!.isNotBlank()){
             return getTrendingFromYoutubeAPI()
         }
@@ -358,8 +353,8 @@ class InfoUtil(private val context: Context) {
 
     @Throws(JSONException::class)
     fun getTrendingFromYoutubeAPI(): ArrayList<ResultItem?> {
+        val items = arrayListOf<ResultItem?>()
         val key = sharedPreferences.getString("api_key", "")!!
-
         val url = "https://www.googleapis.com/youtube/v3/videos?part=snippet&chart=mostPopular&videoCategoryId=10&regionCode=$countryCODE&maxResults=25&key=$key"
         //short data
         val res = genericRequest(url)
@@ -382,27 +377,22 @@ class InfoUtil(private val context: Context) {
             if (v == null || v.thumb.isEmpty()) {
                 continue
             }
-            v.playlistTitle = context.getString(R.string.trendingPlaylist)
             items.add(v)
         }
         return items
     }
 
     private fun getTrendingFromPiped(): ArrayList<ResultItem?> {
+        val items = arrayListOf<ResultItem?>()
         val url = "$pipedURL/trending?region=$countryCODE"
         val res = genericArrayRequest(url)
-        try {
-            for (i in 0 until res.length()) {
-                val element = res.getJSONObject(i)
-                if (element.getInt("duration") < 0) continue
-                element.put("uploader", element.getString("uploaderName"))
-                val v = createVideoFromPipedJSON(element, "https://youtube.com" + element.getString("url"))
-                if (v == null || v.thumb.isEmpty()) continue
-                v.playlistTitle = context.getString(R.string.trendingPlaylist)
-                items.add(v)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        for (i in 0 until res.length()) {
+            val element = res.getJSONObject(i)
+            if (element.getInt("duration") < 0) continue
+            element.put("uploader", element.getString("uploaderName"))
+            val v = createVideoFromPipedJSON(element, "https://youtube.com" + element.getString("url"))
+            if (v == null || v.thumb.isEmpty()) continue
+            items.add(v)
         }
         return items
     }
@@ -445,43 +435,43 @@ class InfoUtil(private val context: Context) {
     }
 
     private fun getFormatsFromYTDL(url: String) : List<Format> {
-        try {
-            val request = YoutubeDLRequest(url)
-            request.addOption("--print", "%(formats)s")
-            request.addOption("--skip-download")
-            request.addOption("-R", "1")
-            request.addOption("--socket-timeout", "5")
+        val request = YoutubeDLRequest(url)
+        request.addOption("--print", "%(formats)s")
+        request.addOption("--print", "%(duration)s")
+        request.addOption("--skip-download")
+        request.addOption("-R", "1")
+        request.addOption("--socket-timeout", "5")
 
-            if (sharedPreferences.getBoolean("use_cookies", false)){
-                val cookiesFile = File(context.cacheDir, "cookies.txt")
-                if (cookiesFile.exists()) {
-                    request.addOption("--cookies", cookiesFile.absolutePath)
-                }
+        if (sharedPreferences.getBoolean("use_cookies", false)){
+            FileUtil.getCookieFile(context){
+                request.addOption("--cookies", it)
             }
 
-            val proxy = sharedPreferences.getString("proxy", "")
-            if (proxy!!.isNotBlank()) {
-                request.addOption("--proxy", proxy)
+            val useHeader = sharedPreferences.getBoolean("use_header", false)
+            val header = sharedPreferences.getString("useragent_header", "")
+            if (useHeader && !header.isNullOrBlank()){
+                request.addOption("--add-header","User-Agent:${header}")
             }
-
-            val res = YoutubeDL.getInstance().execute(request)
-            val results: Array<String?> = try {
-                val lineSeparator = System.getProperty("line.separator")
-                res.out.split(lineSeparator!!).toTypedArray()
-            } catch (e: Exception) {
-                arrayOf(res.out)
-            }
-            val json = results[0]
-            val jsonArray = JSONArray(json)
-
-            return parseYTDLFormats(jsonArray)
-        } catch (e: Exception) {
-            Looper.prepare().run {
-                Toast.makeText(context, e.message, Toast.LENGTH_LONG).show()
-            }
-            e.printStackTrace()
         }
-        return emptyList()
+
+        val proxy = sharedPreferences.getString("proxy", "")
+        if (proxy!!.isNotBlank()) {
+            request.addOption("--proxy", proxy)
+        }
+
+
+
+        val res = YoutubeDL.getInstance().execute(request)
+        val results: Array<String?> = try {
+            val lineSeparator = System.getProperty("line.separator")
+            res.out.split(lineSeparator!!).toTypedArray()
+        } catch (e: Exception) {
+            arrayOf(res.out)
+        }
+        val json = results[0]
+        val jsonArray = JSONArray(json)
+
+        return parseYTDLFormats(jsonArray)
     }
 
     fun getFormatsMultiple(urls: List<String>, progress: (progress: List<Format>) -> Unit){
@@ -507,9 +497,14 @@ class InfoUtil(private val context: Context) {
 
 
                 if (sharedPreferences.getBoolean("use_cookies", false)){
-                    val cookiesFile = File(context.cacheDir, "cookies.txt")
-                    if (cookiesFile.exists()){
-                        request.addOption("--cookies", cookiesFile.absolutePath)
+                    FileUtil.getCookieFile(context){
+                        request.addOption("--cookies", it)
+                    }
+
+                    val useHeader = sharedPreferences.getBoolean("use_header", false)
+                    val header = sharedPreferences.getString("useragent_header", "")
+                    if (useHeader && !header.isNullOrBlank()){
+                        request.addOption("--add-header","User-Agent:${header}")
                     }
                 }
 
@@ -519,10 +514,15 @@ class InfoUtil(private val context: Context) {
                     request.addOption("--proxy", proxy)
                 }
 
+
+
                 YoutubeDL.getInstance().execute(request){ progress, _, line ->
                     try{
-                        val listOfStrings = JSONArray(line)
-                        progress(parseYTDLFormats(listOfStrings))
+                        if (line.isNotBlank()){
+                            val listOfStrings = JSONArray(line)
+                            progress(parseYTDLFormats(listOfStrings))
+                        }
+
                     }catch (e: Exception){
                         progress(emptyList())
                     }
@@ -546,127 +546,148 @@ class InfoUtil(private val context: Context) {
     }
 
     fun getFromYTDL(query: String): ArrayList<ResultItem?> {
-        items = ArrayList()
+        val items = arrayListOf<ResultItem?>()
         val searchEngine = sharedPreferences.getString("search_engine", "ytsearch")
-        try {
-            val request : YoutubeDLRequest
-            if (query.contains("http")){
-                request = YoutubeDLRequest(query)
-            }else{
-                request = YoutubeDLRequest(emptyList())
-                if (searchEngine == "ytsearchmusic"){
+
+        val request : YoutubeDLRequest
+        if (query.contains("http")){
+            request = YoutubeDLRequest(query)
+        }else{
+            request = YoutubeDLRequest(emptyList())
+            when (searchEngine){
+                "ytsearchmusic" -> {
                     request.addOption("--default-search", "https://music.youtube.com/search?q=")
                     request.addOption("ytsearch25:\"${query}\"")
-                }else{
+                }
+                else -> {
                     request.addOption("${searchEngine}25:\"${query}\"")
                 }
             }
+        }
+        val lang = sharedPreferences.getString("app_language", "en")
+        if (searchEngine == "ytsearch" && context.getStringArray(R.array.subtitle_langs).contains(lang)){
+            request.addOption("--extractor-args", "youtube:lang=$lang")
+        }
 
-            request.addOption("--flat-playlist")
-            request.addOption("-j")
-            request.addOption("--skip-download")
-            request.addOption("-R", "1")
-            request.addOption("--socket-timeout", "5")
+        request.addOption("--flat-playlist")
+        request.addOption("-j")
+        request.addOption("--skip-download")
+        request.addOption("-R", "1")
+        request.addOption("--socket-timeout", "5")
 
-            if (sharedPreferences.getBoolean("use_cookies", false)){
-                val cookiesFile = File(context.cacheDir, "cookies.txt")
-                if (cookiesFile.exists()){
-                    request.addOption("--cookies", cookiesFile.absolutePath)
-                }
+        if (sharedPreferences.getBoolean("use_cookies", false)){
+            FileUtil.getCookieFile(context){
+                request.addOption("--cookies", it)
             }
 
-
-
-            val proxy = sharedPreferences.getString("proxy", "")
-            if (proxy!!.isNotBlank()){
-               request.addOption("--proxy", proxy)
+            val useHeader = sharedPreferences.getBoolean("use_header", false)
+            val header = sharedPreferences.getString("useragent_header", "")
+            if (useHeader && !header.isNullOrBlank()){
+                request.addOption("--add-header","User-Agent:${header}")
             }
+        }
 
-            val youtubeDLResponse = YoutubeDL.getInstance().execute(request)
-            val results: Array<String?> = try {
-                val lineSeparator = System.getProperty("line.separator")
-                youtubeDLResponse.out.split(lineSeparator!!).toTypedArray()
-            } catch (e: Exception) {
-                arrayOf(youtubeDLResponse.out)
-            }
-            for (result in results) {
-                if (result.isNullOrBlank()) continue
-                val jsonObject = JSONObject(result)
-                val title = if (jsonObject.has("title")) {
-                    if (jsonObject.getString("title") == "[Private video]") continue
-                    jsonObject.getString("title")
-                } else {
-                    jsonObject.getString("webpage_url_basename")
-                }
-                var author: String = if (jsonObject.has("uploader")) jsonObject.getString("uploader") else ""
-                if (author.isEmpty() || author == "null"){
-                    author = if (jsonObject.has("channel")) jsonObject.getString("channel") else ""
-                    if (author.isEmpty() || author == "null"){
-                        author = if (jsonObject.has("playlist_uploader")) jsonObject.getString("playlist_uploader") else ""
-                    }
-                }
-                var duration = ""
-                runCatching {
-                    if (jsonObject.has("duration")) {
-                        duration = formatIntegerDuration(jsonObject.getInt("duration"), Locale.US)
-                    }
-                }
-                val url = jsonObject.getString("webpage_url")
-                var thumb: String? = ""
-                if (jsonObject.has("thumbnail")) {
-                    thumb = jsonObject.getString("thumbnail")
-                } else if (jsonObject.has("thumbnails")) {
-                    val thumbs = jsonObject.getJSONArray("thumbnails")
-                    if (thumbs.length() > 0){
-                        thumb = thumbs.getJSONObject(thumbs.length() - 1).getString("url")
-                    }
-                }
-                val website = if (jsonObject.has("ie_key")) jsonObject.getString("ie_key") else jsonObject.getString("extractor")
-                var playlistTitle: String? = ""
-                if (jsonObject.has("playlist_title")) playlistTitle = jsonObject.getString("playlist_title")
-                if(playlistTitle.equals(query)) playlistTitle = ""
-                val formatsInJSON = if (jsonObject.has("formats") && jsonObject.get("formats") is JSONArray) jsonObject.getJSONArray("formats") else null
-                val formats : ArrayList<Format> = parseYTDLFormats(formatsInJSON)
+        val proxy = sharedPreferences.getString("proxy", "")
+        if (proxy!!.isNotBlank()){
+            request.addOption("--proxy", proxy)
+        }
 
-                val chaptersInJSON = if (jsonObject.has("chapters") && jsonObject.get("chapters") is JSONArray) jsonObject.getJSONArray("chapters") else null
-                val listType: Type = object : TypeToken<List<ChapterItem>>() {}.type
-                var chapters : ArrayList<ChapterItem> = arrayListOf()
 
-                if (chaptersInJSON != null){
-                    chapters = Gson().fromJson(chaptersInJSON.toString(), listType)
-                }
 
-                var urls = "";
-                if(jsonObject.has("requested_formats")) {
-                    val requestedFormats = jsonObject.getJSONArray("requested_formats")
-                    val urlList = mutableListOf<String>()
-                    val length = requestedFormats.length()-1
-                    for (i in length downTo 0) {
-                        urlList.add(requestedFormats.getJSONObject(i).getString("url"))
-                    }
-
-                    urls = urlList.joinToString("\n")
-                }
-
-                items.add(ResultItem(0,
-                        url,
-                        title,
-                        author,
-                        duration,
-                        thumb!!,
-                        website,
-                        playlistTitle!!,
-                        formats,
-                    urls,
-                        chapters
-                    )
-                )
-            }
+        val youtubeDLResponse = YoutubeDL.getInstance().execute(request)
+        val results: List<String?> = try {
+            val lineSeparator = System.getProperty("line.separator")
+            youtubeDLResponse.out.split(lineSeparator!!)
         } catch (e: Exception) {
-            Looper.prepare().run {
-                Toast.makeText(context, e.message, Toast.LENGTH_LONG).show()
+            listOf(youtubeDLResponse.out)
+        }.filter { it.isNotBlank() }
+        for (result in results) {
+            if (result.isNullOrBlank()) continue
+            val jsonObject = JSONObject(result)
+            val title = if (jsonObject.has("title")) {
+                if (jsonObject.getString("title") == "[Private video]") continue
+                jsonObject.getString("title")
+            } else {
+                jsonObject.getString("webpage_url_basename")
             }
-            e.printStackTrace()
+            var author: String = if (jsonObject.has("uploader")) jsonObject.getString("uploader") else ""
+            if (author.isEmpty() || author == "null"){
+                author = if (jsonObject.has("channel")) jsonObject.getString("channel") else ""
+                if (author.isEmpty() || author == "null"){
+                    author = if (jsonObject.has("playlist_uploader")) jsonObject.getString("playlist_uploader") else ""
+                }
+            }
+            var duration = ""
+            runCatching {
+                if (jsonObject.has("duration")) {
+                    duration = formatIntegerDuration(jsonObject.getInt("duration"), Locale.US)
+                }
+            }
+
+            var thumb: String? = ""
+            if (jsonObject.has("thumbnail")) {
+                thumb = jsonObject.getString("thumbnail")
+            } else if (jsonObject.has("thumbnails")) {
+                val thumbs = jsonObject.getJSONArray("thumbnails")
+                if (thumbs.length() > 0){
+                    thumb = thumbs.getJSONObject(thumbs.length() - 1).getString("url")
+                }
+            }
+            val website = jsonObject.getString(listOf("ie_key", "extractor_key", "extractor").first { jsonObject.has(it) })
+            var playlistTitle: String? = ""
+            if (jsonObject.has("playlist_title")) playlistTitle = jsonObject.getString("playlist_title")
+            if(playlistTitle.equals(query)) playlistTitle = ""
+
+            if (playlistTitle?.isNotBlank() == true){
+                playlistTitle += "[${jsonObject.getString("playlist_index")}]"
+            }
+
+            val formatsInJSON = if (jsonObject.has("formats") && jsonObject.get("formats") is JSONArray) jsonObject.getJSONArray("formats") else null
+            val formats : ArrayList<Format> = parseYTDLFormats(formatsInJSON)
+
+            val chaptersInJSON = if (jsonObject.has("chapters") && jsonObject.get("chapters") is JSONArray) jsonObject.getJSONArray("chapters") else null
+            val listType: Type = object : TypeToken<List<ChapterItem>>() {}.type
+            var chapters : ArrayList<ChapterItem> = arrayListOf()
+
+            if (chaptersInJSON != null){
+                chapters = Gson().fromJson(chaptersInJSON.toString(), listType)
+            }
+
+            var urls = "";
+            if(jsonObject.has("requested_formats")) {
+                val requestedFormats = jsonObject.getJSONArray("requested_formats")
+                val urlList = mutableListOf<String>()
+                val length = requestedFormats.length()-1
+                for (i in length downTo 0) {
+                    urlList.add(requestedFormats.getJSONObject(i).getString("url"))
+                }
+
+                urls = urlList.joinToString("\n")
+            }
+
+            val url = if (jsonObject.has("url") && results.size > 1){
+                jsonObject.getString("url")
+            }else{
+                if (Patterns.WEB_URL.matcher(query).matches()){
+                    query
+                }else{
+                    jsonObject.getString("webpage_url")
+                }
+            }
+
+            items.add(ResultItem(0,
+                url,
+                title,
+                author,
+                duration,
+                thumb!!,
+                website,
+                playlistTitle!!,
+                formats,
+                urls,
+                chapters
+            )
+            )
         }
         return items
     }
@@ -675,7 +696,7 @@ class InfoUtil(private val context: Context) {
         val formats = arrayListOf<Format>()
 
         if (formatsInJSON != null) {
-            for (f in 0 until formatsInJSON.length()){
+            for (f in formatsInJSON.length() - 1 downTo 0){
                 val format = formatsInJSON.getJSONObject(f)
                 if (format.has("filesize")){
                     if (format.get("filesize") == "None"){
@@ -713,82 +734,81 @@ class InfoUtil(private val context: Context) {
     }
 
     fun getMissingInfo(url: String): ResultItem? {
-        try {
-            val request = YoutubeDLRequest(url)
-            request.addOption("--flat-playlist")
-            request.addOption("-J")
-            request.addOption("--skip-download")
-            request.addOption("-R", "1")
-            request.addOption("--socket-timeout", "5")
+        val request = YoutubeDLRequest(url)
+        request.addOption("--flat-playlist")
+        request.addOption("-J")
+        request.addOption("--skip-download")
+        request.addOption("-R", "1")
+        request.addOption("--socket-timeout", "5")
 
-            if (sharedPreferences.getBoolean("use_cookies", false)){
-                val cookiesFile = File(context.cacheDir, "cookies.txt")
-                if (cookiesFile.exists()){
-                    request.addOption("--cookies", cookiesFile.absolutePath)
-                }
+        if (sharedPreferences.getBoolean("use_cookies", false)){
+            FileUtil.getCookieFile(context){
+                request.addOption("--cookies", it)
             }
 
-
-
-            val proxy = sharedPreferences.getString("proxy", "")
-            if (proxy!!.isNotBlank()){
-                request.addOption("--proxy", proxy)
+            val useHeader = sharedPreferences.getBoolean("use_header", false)
+            val header = sharedPreferences.getString("useragent_header", "")
+            if (useHeader && !header.isNullOrBlank()){
+                request.addOption("--add-header","User-Agent:${header}")
             }
-
-            val youtubeDLResponse = YoutubeDL.getInstance().execute(request)
-            val jsonObject = JSONObject(youtubeDLResponse.out)
-
-            var author: String = if (jsonObject.has("uploader")) jsonObject.getString("uploader") else ""
-            if (author.isEmpty() || author == "null"){
-                author = if (jsonObject.has("channel")) jsonObject.getString("channel") else ""
-                if (author.isEmpty() || author == "null"){
-                    author = if (jsonObject.has("playlist_uploader")) jsonObject.getString("playlist_uploader") else ""
-                }
-            }
-
-            var duration = ""
-            runCatching {
-                if (jsonObject.has("duration")) {
-                    duration = formatIntegerDuration(jsonObject.getInt("duration"), Locale.US)
-                }
-            }
-
-            var thumb: String? = ""
-            if (jsonObject.has("thumbnail")) {
-                thumb = jsonObject.getString("thumbnail")
-            } else if (jsonObject.has("thumbnails")) {
-                val thumbs = jsonObject.getJSONArray("thumbnails")
-                if (thumbs.length() > 0){
-                    thumb = thumbs.getJSONObject(thumbs.length() - 1).getString("url")
-                }
-            }
-
-            val isPlaylist = jsonObject.has("playlist_count")
-            return ResultItem(
-                0,
-                url,
-                if (isPlaylist){
-                    "[${jsonObject.getInt("playlist_count")} Items] ${jsonObject.getString("title")}"
-                }else{
-                    jsonObject.getString("title")
-                },
-                author,
-                duration,
-                thumb!!,
-                jsonObject.getString("extractor"),
-                if (isPlaylist) jsonObject.getString("title") else "",
-                arrayListOf(),
-                "",
-                arrayListOf(),
-                System.currentTimeMillis()
-            )
-        } catch (e: Exception) {
-            Looper.prepare().run {
-                Toast.makeText(context, e.message, Toast.LENGTH_LONG).show()
-            }
-            e.printStackTrace()
         }
-        return null
+
+
+
+        val proxy = sharedPreferences.getString("proxy", "")
+        if (proxy!!.isNotBlank()){
+            request.addOption("--proxy", proxy)
+        }
+
+
+
+        val youtubeDLResponse = YoutubeDL.getInstance().execute(request)
+        val jsonObject = JSONObject(youtubeDLResponse.out)
+
+        var author: String = if (jsonObject.has("uploader")) jsonObject.getString("uploader") else ""
+        if (author.isEmpty() || author == "null"){
+            author = if (jsonObject.has("channel")) jsonObject.getString("channel") else ""
+            if (author.isEmpty() || author == "null"){
+                author = if (jsonObject.has("playlist_uploader")) jsonObject.getString("playlist_uploader") else ""
+            }
+        }
+
+        var duration = ""
+        runCatching {
+            if (jsonObject.has("duration")) {
+                duration = formatIntegerDuration(jsonObject.getInt("duration"), Locale.US)
+            }
+        }
+
+        var thumb: String? = ""
+        if (jsonObject.has("thumbnail")) {
+            thumb = jsonObject.getString("thumbnail")
+        } else if (jsonObject.has("thumbnails")) {
+            val thumbs = jsonObject.getJSONArray("thumbnails")
+            if (thumbs.length() > 0){
+                thumb = thumbs.getJSONObject(thumbs.length() - 1).getString("url")
+            }
+        }
+
+        val isPlaylist = jsonObject.has("playlist_count")
+        return ResultItem(
+            0,
+            url,
+            if (isPlaylist){
+                ""
+            }else{
+                jsonObject.getString("title")
+            },
+            author,
+            duration,
+            thumb!!,
+            jsonObject.getString("extractor"),
+            if (isPlaylist) jsonObject.getString("title") else "",
+            arrayListOf(),
+            "",
+            arrayListOf(),
+            System.currentTimeMillis()
+        )
     }
 
 
@@ -885,9 +905,14 @@ class InfoUtil(private val context: Context) {
                 request.addOption("--socket-timeout", "5")
 
                 if (sharedPreferences.getBoolean("use_cookies", false)){
-                    val cookiesFile = File(context.cacheDir, "cookies.txt")
-                    if (cookiesFile.exists()){
-                        request.addOption("--cookies", cookiesFile.absolutePath)
+                    FileUtil.getCookieFile(context){
+                        request.addOption("--cookies", it)
+                    }
+
+                    val useHeader = sharedPreferences.getBoolean("use_header", false)
+                    val header = sharedPreferences.getString("useragent_header", "")
+                    if (useHeader && !header.isNullOrBlank()){
+                        request.addOption("--add-header","User-Agent:${header}")
                     }
                 }
 
@@ -897,6 +922,8 @@ class InfoUtil(private val context: Context) {
                 if (proxy!!.isNotBlank()){
                     request.addOption("--proxy", proxy)
                 }
+
+
 
                 val youtubeDLResponse = YoutubeDL.getInstance().execute(request)
                 val results: Array<String?> = try {
@@ -927,33 +954,68 @@ class InfoUtil(private val context: Context) {
     }
 
     fun buildYoutubeDLRequest(downloadItem: DownloadItem) : YoutubeDLRequest{
-        val cacheDir = File(context.cacheDir.absolutePath + "/downloads/")
-        val tempFileDir = File(cacheDir, downloadItem.id.toString())
-        tempFileDir.delete()
-        tempFileDir.mkdirs()
-
         val url = downloadItem.url
         val request = YoutubeDLRequest(url)
         val type = downloadItem.type
+
+        val downDir : File
+        if (!sharedPreferences.getBoolean("cache_downloads", true) && File(FileUtil.formatPath(downloadItem.downloadPath)).canWrite()){
+            downDir = File(FileUtil.formatPath(downloadItem.downloadPath))
+            request.addOption("--no-quiet")
+            request.addOption("--no-simulate")
+            request.addOption("--print", "after_move:'%(filepath,_filename)s'")
+        }else{
+            val cacheDir = FileUtil.getCachePath(context)
+            downDir = File(cacheDir, downloadItem.id.toString())
+            downDir.delete()
+            downDir.mkdirs()
+        }
 
         val aria2 = sharedPreferences.getBoolean("aria2", false)
         if (aria2) {
             request.addOption("--downloader", "libaria2c.so")
             request.addOption("--external-downloader-args", "aria2c:\"--summary-interval=1\"")
-        } else {
-            val concurrentFragments = sharedPreferences.getInt("concurrent_fragments", 1)
-            if (concurrentFragments > 1) request.addOption("-N", concurrentFragments)
         }
+
+        val concurrentFragments = sharedPreferences.getInt("concurrent_fragments", 1)
+        if (concurrentFragments > 1) request.addOption("-N", concurrentFragments)
 
         val retries = sharedPreferences.getString("--retries", "")!!
         val fragmentRetries = sharedPreferences.getString("--fragment_retries", "")!!
 
-        if(retries.isNotEmpty()) request.addOption("retries", retries)
-        if(fragmentRetries.isNotEmpty()) request.addOption("fragment-retries", fragmentRetries)
+        if(retries.isNotEmpty()) request.addOption("--retries", retries)
+        if(fragmentRetries.isNotEmpty()) request.addOption("--fragment-retries", fragmentRetries)
 
-        val limitRate = sharedPreferences.getString("limit_rate", "")
-        if (limitRate != "") request.addOption("-r", limitRate!!)
+        val limitRate = sharedPreferences.getString("limit_rate", "")!!
+        if (limitRate.isNotBlank()) request.addOption("-r", limitRate)
+
+        val sponsorblockURL = sharedPreferences.getString("sponsorblock_url", "")!!
+        if (sponsorblockURL.isNotBlank()) request.addOption("--sponsorblock-api", sponsorblockURL)
+
+        if (sharedPreferences.getBoolean("restrict_filenames", true)) request.addOption("--restrict-filenames")
+        if (sharedPreferences.getBoolean("use_cookies", false)){
+            FileUtil.getCookieFile(context){
+                request.addOption("--cookies", it)
+            }
+        }
+
+        val proxy = sharedPreferences.getString("proxy", "")
+        if (proxy!!.isNotBlank()){
+            request.addOption("--proxy", proxy)
+        }
+
+        val keepCache = sharedPreferences.getBoolean("keep_cache", false)
+        if(keepCache){
+            request.addOption("--part")
+            request.addOption("--keep-fragments")
+        }
+
+        val preferredAudioCodec = sharedPreferences.getString("audio_codec", "")!!
+        val aCodecPref = "ba[acodec~='^($preferredAudioCodec)']"
+
         if(downloadItem.type != DownloadViewModel.Type.command){
+            request.addOption("--trim-filenames",  downDir.absolutePath.length + 120)
+
             if (downloadItem.SaveThumb) {
                 request.addOption("--write-thumbnail")
                 request.addOption("--convert-thumbnails", "jpg")
@@ -972,25 +1034,27 @@ class InfoUtil(private val context: Context) {
                 }
             }
 
-            if (sponsorBlockFilters.isNotEmpty()) {
-                val filters = java.lang.String.join(",", sponsorBlockFilters.filter { it.isNotBlank() })
-                if (filters.isNotBlank()) {
-                    request.addOption("--sponsorblock-remove", filters)
-                    if (sharedPreferences.getBoolean("force_keyframes", false)){
-                        request.addOption("--force-keyframes-at-cuts")
+
+            if (sharedPreferences.getBoolean("use_sponsorblock", true)){
+                if (sponsorBlockFilters.isNotEmpty()) {
+                    val filters = java.lang.String.join(",", sponsorBlockFilters.filter { it.isNotBlank() })
+                    if (filters.isNotBlank()) {
+                        request.addOption("--sponsorblock-remove", filters)
+                        if (sharedPreferences.getBoolean("force_keyframes", false)){
+                            request.addOption("--force-keyframes-at-cuts")
+                        }
                     }
                 }
             }
 
             if(downloadItem.title.isNotBlank()){
-                request.addCommands(listOf("--replace-in-metadata","title",".*.",downloadItem.title.take(200)))
+                request.addCommands(listOf("--replace-in-metadata", "title", ".+", downloadItem.title))
             }
             if (downloadItem.author.isNotBlank()){
-                request.addCommands(listOf("--replace-in-metadata","uploader",".*.",downloadItem.author.take(25)))
+                request.addOption("--parse-metadata", "%(artist,uploader,creator,channel|null)s:%(uploader)s")
+                request.addCommands(listOf("--replace-in-metadata", "uploader", ".+", downloadItem.author))
+                request.addCommands(listOf("--replace-in-metadata","uploader"," - Topic$",""))
             }
-            request.addCommands(listOf("--replace-in-metadata","uploader"," - Topic$",""))
-
-            downloadItem.customFileNameTemplate = downloadItem.customFileNameTemplate.replace("%(uploader)s", "%(uploader|${downloadItem.author})s")
 
             if (downloadItem.downloadSections.isNotBlank()){
                 downloadItem.downloadSections.split(";").forEach {
@@ -1004,7 +1068,10 @@ class InfoUtil(private val context: Context) {
                         request.addOption("--force-keyframes-at-cuts")
                     }
                 }
-                downloadItem.customFileNameTemplate += " %(section_title)s %(autonumber)s"
+                downloadItem.customFileNameTemplate += " %(section_title|)s "
+                if (downloadItem.downloadSections.split(";").size > 1){
+                    downloadItem.customFileNameTemplate += "%(autonumber)s"
+                }
                 request.addOption("--output-na-placeholder", " ")
             }
 
@@ -1013,7 +1080,9 @@ class InfoUtil(private val context: Context) {
             }
 
             if (downloadItem.extraCommands.isNotBlank()){
-                val conf = File(context.cacheDir.absolutePath + "/downloads/configExtraCommands${System.currentTimeMillis()}.txt")
+                val cache = File(FileUtil.getCachePath(context))
+                cache.mkdirs()
+                val conf = File(cache.absolutePath + "/${System.currentTimeMillis()}.txt")
                 conf.createNewFile()
                 conf.writeText(downloadItem.extraCommands)
                 request.addOption(
@@ -1025,28 +1094,21 @@ class InfoUtil(private val context: Context) {
             if (sharedPreferences.getBoolean("write_description", false)){
                 request.addOption("--write-description")
             }
+
+            downloadItem.customFileNameTemplate = downloadItem.customFileNameTemplate.replace("%(uploader)s", "%(uploader,channel)s")
         }
 
-        if (sharedPreferences.getBoolean("restrict_filenames", true)) {
-            request.addOption("--restrict-filenames")
-        }
-
-        if (sharedPreferences.getBoolean("use_cookies", false)){
-            val cookiesFile = File(context.cacheDir, "cookies.txt")
-            if (cookiesFile.exists()){
-                request.addOption("--cookies", cookiesFile.absolutePath)
+        if (downloadItem.playlistTitle.isNotBlank()){
+            request.addOption("--parse-metadata","${downloadItem.playlistTitle.split("[")[0]}:%(playlist)s")
+            runCatching {
+                request.addOption("--parse-metadata",
+                    downloadItem.playlistTitle
+                        .substring(
+                            downloadItem.playlistTitle.indexOf("[") + 1,
+                            downloadItem.playlistTitle.indexOf("]"),
+                        ) + ":%(playlist_index)s"
+                )
             }
-        }
-
-        val proxy = sharedPreferences.getString("proxy", "")
-        if (proxy!!.isNotBlank()){
-            request.addOption("--proxy", proxy)
-        }
-
-        val keepCache = sharedPreferences.getBoolean("keep_cache", false)
-        if(keepCache){
-            request.addOption("--part")
-            request.addOption("--keep-fragments")
         }
 
         when(type){
@@ -1054,8 +1116,14 @@ class InfoUtil(private val context: Context) {
                 val supportedContainers = context.resources.getStringArray(R.array.audio_containers)
 
                 var audioQualityId : String = downloadItem.format.format_id
-                if (audioQualityId.isBlank() || audioQualityId == "0" || audioQualityId == context.getString(R.string.best_quality) || audioQualityId == "best") audioQualityId = ""
-                else if (audioQualityId == context.getString(R.string.worst_quality) || audioQualityId == "worst") audioQualityId = "worstaudio"
+                if (audioQualityId.isBlank() || listOf("0", context.getString(R.string.best_quality), "best", "").contains(audioQualityId)){
+                    audioQualityId = ""
+                    if (preferredAudioCodec.isNotBlank()){
+                        audioQualityId = "${aCodecPref}/bestaudio"
+                    }
+                }else if (listOf(context.getString(R.string.worst_quality), "worst").contains(audioQualityId)){
+                    audioQualityId = "worstaudio"
+                }
 
                 val ext = downloadItem.container
                 if (audioQualityId.isNotBlank()) request.addOption("-f", audioQualityId)
@@ -1067,7 +1135,7 @@ class InfoUtil(private val context: Context) {
                     }
                 }
 
-                request.addOption("-P", tempFileDir.absolutePath)
+                request.addOption("-P", downDir.absolutePath)
 
                 if (downloadItem.audioPreferences.splitByChapters && downloadItem.downloadSections.isBlank()){
                     request.addOption("--split-chapters")
@@ -1077,7 +1145,7 @@ class InfoUtil(private val context: Context) {
                     if (sharedPreferences.getBoolean("embed_metadata", true)){
                         request.addOption("--embed-metadata")
 
-                        request.addOption("--parse-metadata", "%(release_year,upload_date)s:%(meta_date)s")
+                        request.addOption("--parse-metadata", "%(release_year,release_date>%Y,upload_date>%Y)s:%(meta_date)s")
 
                         if (downloadItem.playlistTitle.isNotEmpty()) {
                             request.addOption("--parse-metadata", "%(album,playlist,title)s:%(meta_album)s")
@@ -1093,7 +1161,7 @@ class InfoUtil(private val context: Context) {
                         if (! request.hasOption("--convert-thumbnails")) request.addOption("--convert-thumbnails", "jpg")
                         if (sharedPreferences.getBoolean("crop_thumbnail", true)){
                             try {
-                                val config = File(context.cacheDir.absolutePath + "/downloads/${downloadItem.id}/config" + downloadItem.title + "##" + downloadItem.format.format_id + ".txt")
+                                val config = File(context.cacheDir.absolutePath + "/config" + downloadItem.id + "##ffmpegCrop.txt")
                                 val configData = "--ppa \"ffmpeg: -c:v mjpeg -vf crop=\\\"'if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'\\\"\""
                                 config.writeText(configData)
                                 request.addOption("--ppa", "ThumbnailsConvertor:-qmin 1 -q:v 1")
@@ -1105,7 +1173,7 @@ class InfoUtil(private val context: Context) {
                     }
 
                     if (downloadItem.customFileNameTemplate.isNotBlank()){
-                        request.addOption("-o", "${downloadItem.customFileNameTemplate}.%(ext)s")
+                        request.addOption("-o", "${downloadItem.customFileNameTemplate.removeSuffix(".%(ext)s")}.%(ext)s")
                     }
                 }
 
@@ -1113,43 +1181,25 @@ class InfoUtil(private val context: Context) {
             DownloadViewModel.Type.video -> {
                 val supportedContainers = context.resources.getStringArray(R.array.video_containers)
 
-                if (!sharedPreferences.getBoolean("embed_metadata", true)){
-                    request.addOption("--no-embed-metadata")
-                }
-
                 if (downloadItem.videoPreferences.addChapters) {
-                    request.addOption("--sponsorblock-mark", "all")
+                    if (sharedPreferences.getBoolean("use_sponsorblock", true)){
+                        request.addOption("--sponsorblock-mark", "all")
+                    }
                     request.addOption("--embed-chapters")
                 }
-                if (downloadItem.videoPreferences.embedSubs) {
-                    request.addOption("--embed-subs")
-                    request.addOption("--sub-langs", downloadItem.videoPreferences.subsLanguages)
-                }
-                val defaultFormats = context.resources.getStringArray(R.array.video_formats)
 
-                if (downloadItem.videoPreferences.audioFormatIDs.isNotEmpty()) request.addOption("--audio-multistreams")
 
-                var videoFormatID = downloadItem.format.format_id
-                Log.e(DownloadWorker.TAG, videoFormatID)
-                var formatArgument = if (downloadItem.videoPreferences.removeAudio) "bestvideo" else "bestvideo+bestaudio/best"
-                if (videoFormatID.isNotEmpty()) {
-                    if (videoFormatID == context.resources.getString(R.string.best_quality) || videoFormatID == "best") videoFormatID = "bestvideo"
-                    else if (videoFormatID == context.resources.getString(R.string.worst_quality) || videoFormatID == "worst") videoFormatID = "worst"
-                    else if (defaultFormats.contains(videoFormatID)) videoFormatID = "bestvideo[height<="+videoFormatID.substring(0, videoFormatID.length -1)+"]"
-
-                    formatArgument = if (downloadItem.videoPreferences.audioFormatIDs.isNotEmpty() && ! downloadItem.videoPreferences.removeAudio){
-                        val audioIds = downloadItem.videoPreferences.audioFormatIDs.joinToString("+")
-                        "$videoFormatID+$audioIds/$videoFormatID/best"
-                    }else{
-                        "$videoFormatID+bestaudio/$videoFormatID/best"
-                    }
-                }
-                Log.e(DownloadWorker.TAG, formatArgument)
-                request.addOption("-f", formatArgument)
-                val outputFormat = downloadItem.container
-                if(outputFormat.isNotEmpty() && outputFormat != "Default" && outputFormat != context.getString(R.string.defaultValue) && supportedContainers.contains(outputFormat)){
-                    request.addOption("--merge-output-format", outputFormat.lowercase())
-                    if (outputFormat != "webm") {
+                var cont = ""
+                val outputContainer = downloadItem.container
+                if(
+                    outputContainer.isNotEmpty() &&
+                    outputContainer != "Default" &&
+                    outputContainer != context.getString(R.string.defaultValue) &&
+                    supportedContainers.contains(outputContainer)
+                ){
+                    cont = outputContainer
+                    request.addOption("--merge-output-format", outputContainer.lowercase())
+                    if (outputContainer != "webm") {
                         val embedThumb = sharedPreferences.getBoolean("embed_thumbnail", false)
                         if (embedThumb) {
                             request.addOption("--embed-thumbnail")
@@ -1157,44 +1207,161 @@ class InfoUtil(private val context: Context) {
                     }
                 }
 
+                //format logic
+                var videof = downloadItem.format.format_id
+                var audiof = "ba"
+                if (downloadItem.videoPreferences.audioFormatIDs.isNotEmpty()){
+                    audiof = downloadItem.videoPreferences.audioFormatIDs.joinToString("+")
+                }
+                if (downloadItem.videoPreferences.removeAudio) audiof = ""
+
+                val defaultFormats = context.resources.getStringArray(R.array.video_formats_values)
+                val usingGenericFormat = defaultFormats.contains(videof) || downloadItem.allFormats.isEmpty() || downloadItem.allFormats == getGenericVideoFormats(context.resources)
+                val f = StringBuilder()
+
+                if(!usingGenericFormat){
+                    if (preferredAudioCodec.isNotBlank()){
+                        f.append("$videof+$aCodecPref/")
+                    }
+                    val aa = if (audiof.isNotBlank()) "+$audiof" else ""
+                    f.append("$videof$aa/$videof/best")
+
+                    if (audiof.contains("+")){
+                        request.addOption("--audio-multistreams")
+                    }
+                }else{
+                    if (videof == context.resources.getString(R.string.best_quality) || videof == "best") {
+                        videof = "bv"
+                    }else if (videof == context.resources.getString(R.string.worst_quality) || videof == "worst") {
+                        videof = "worst"
+                    }else if (defaultFormats.contains(videof)) {
+                        videof = "bv[height<="+videof.split("_")[0].dropLast(1)+"]"
+                    }
+
+                    val preferredFormatIDs = sharedPreferences.getString("format_id", "").toString()
+                        .split(",")
+                        .filter { it.isNotEmpty() }
+                        .ifEmpty { listOf(videof) }.toMutableList()
+                    if (!preferredFormatIDs.contains(videof)){
+                        preferredFormatIDs.add(0, videof)
+                    }
+
+                    val preferredAudioFormatIDs = sharedPreferences.getString("format_id_audio", "")
+                        .toString()
+                        .split(",")
+                        .filter { it.isNotEmpty() }
+                        .ifEmpty {
+                            val list = mutableListOf<String>()
+                            if (preferredAudioCodec.isNotBlank()) list.add("ba[acodec~='^($preferredAudioCodec)']")
+                            list.add(audiof)
+                            list
+                        }
+
+                    val preferredAudioFormats = if (downloadItem.videoPreferences.audioFormatIDs.isEmpty()) {
+                        preferredAudioFormatIDs
+                    } else listOf(audiof)
+
+                    if (preferredAudioFormats.any{it.contains("+")}){
+                        request.addOption("--audio-multistreams")
+                    }
+
+                    val preferredCodec = sharedPreferences.getString("video_codec", "")
+                    val extPref = if (cont.isNotBlank()) "[ext=$cont]" else ""
+                    val vCodecPref = if (preferredCodec!!.isNotBlank()) "[vcodec~='^($preferredCodec)']" else ""
+
+
+                    preferredFormatIDs.forEach { v ->
+                        //build format with extension and vcodec
+                        preferredAudioFormats.forEach { a ->
+                            val aa = if (a.isNotBlank()) "+$a" else ""
+                            f.append("$v$extPref$vCodecPref$aa/")
+                        }
+
+                        //build format with vcodec
+                        if (extPref.isNotBlank()){
+                            preferredAudioFormats.forEach { a ->
+                                val aa = if (a.isNotBlank()) "+$a" else ""
+                                f.append("$v$vCodecPref$aa/")
+                            }
+                        }
+
+                        //build format with audio
+                        if (vCodecPref.isNotBlank()){
+                            preferredAudioFormats.forEach {a ->
+                                val aa = if (a.isNotBlank()) "+$a" else ""
+                                f.append("$v$aa/")
+                            }
+                        }
+
+                        if (!downloadItem.videoPreferences.removeAudio){
+                            //build format with best audio
+                            if(!f.contains("$v+ba/")){
+                                f.append("$v+ba/")
+                            }
+
+                            //build formats with standalone video
+                            if(!f.contains("/$v/")){
+                                f.append("$v/")
+                            }
+                        }
+                    }
+
+                    if(!f.endsWith("best/")){
+                        //last fallback
+                        f.append("best")
+                    }
+                }
+
+
+                request.addOption("-f", f.toString().replace("/$".toRegex(), ""))
+
                 if (downloadItem.videoPreferences.writeSubs){
                     val subFormat = sharedPreferences.getString("sub_format", "srt")
 
                     request.addOption("--write-subs")
-                    request.addOption("--write-auto-subs")
-                    request.addOption("--sub-format", "${subFormat}/best")
-                    request.addOption("--convert-subtitles", "srt")
-                    if (!downloadItem.videoPreferences.embedSubs) {
-                        request.addOption("--sub-langs", downloadItem.videoPreferences.subsLanguages)
+                    if(subFormat!!.isNotBlank()){
+                        request.addOption("--sub-format", "${subFormat}/best")
+                        request.addOption("--convert-subtitles", subFormat ?: "srt")
                     }
+                }
+
+                if (downloadItem.videoPreferences.embedSubs) {
+                    request.addOption("--embed-subs")
+                }
+
+                if (downloadItem.videoPreferences.embedSubs || downloadItem.videoPreferences.writeSubs){
+                    request.addOption("--sub-langs", downloadItem.videoPreferences.subsLanguages.ifEmpty { "en.*,.*-orig" })
+                    request.addOption("--write-auto-subs")
                 }
 
                 if (downloadItem.videoPreferences.removeAudio){
                     request.addOption("--ppa", "ffmpeg:-an")
                 }
 
-                request.addOption("-P", tempFileDir.absolutePath)
+                request.addOption("-P", downDir.absolutePath)
 
                 if (downloadItem.videoPreferences.splitByChapters  && downloadItem.downloadSections.isBlank()){
                     request.addOption("--split-chapters")
                     request.addOption("-o", "chapter:%(section_title)s.%(ext)s")
                 }else{
                     if (downloadItem.customFileNameTemplate.isNotBlank()){
-                        request.addOption("-o", "${downloadItem.customFileNameTemplate}.%(ext)s")
+                        request.addOption("-o", "${downloadItem.customFileNameTemplate.removeSuffix(".%(ext)s")}.%(ext)s")
                     }
                 }
 
             }
             DownloadViewModel.Type.command -> {
+                request.addOption("-P", downDir.absolutePath)
                 request.addOption(
                     "--config-locations",
-                    File(context.cacheDir.absolutePath + "/downloads/config${System.currentTimeMillis()}.txt").apply {
+                    File(context.cacheDir.absolutePath + "/config[${downloadItem.id}].txt").apply {
                         writeText(downloadItem.format.format_note)
                     }.absolutePath
                 )
-                request.addOption("-P", tempFileDir.absolutePath)
 
             }
+
+            else -> {}
         }
 
         return request
@@ -1209,7 +1376,42 @@ class InfoUtil(private val context: Context) {
             }
         }
 
-        return java.lang.String.join(" ", arr).replace("\"\"", "\" \"")
+        var final = java.lang.String.join(" ", arr).replace("\"\"", "\" \"")
+        val ppas = "--config(-locations)? \"(.*?)\"".toRegex().findAll(final)
+        ppas.forEach {res ->
+            val path = "\"(.*?)\"".toRegex().find(res.value)?.value?.replace("\"", "")
+            val newVal = runCatching {
+                File(path ?: "").readText()
+            }.onFailure {
+                res.value
+            }.getOrDefault("")
+
+            final = final.replace(res.value, newVal)
+
+        }
+
+        return final
+    }
+
+    fun getGenericAudioFormats(resources: Resources) : MutableList<Format>{
+        val audioFormatIDPreference = sharedPreferences.getString("format_id_audio", "").toString().split(",").filter { it.isNotEmpty() }
+        val audioFormats = resources.getStringArray(R.array.audio_formats)
+        val formats = mutableListOf<Format>()
+        val containerPreference = sharedPreferences.getString("audio_format", "")
+        audioFormats.reversed().forEach { formats.add(Format(it, containerPreference!!,"","", "",0, it)) }
+        audioFormatIDPreference.forEach { formats.add(Format(it, containerPreference!!,"","", "",1, it)) }
+        return formats
+    }
+
+    fun getGenericVideoFormats(resources: Resources) : MutableList<Format>{
+        val formatIDPreference = sharedPreferences.getString("format_id", "").toString().split(",").filter { it.isNotEmpty() }
+
+        val videoFormats = resources.getStringArray(R.array.video_formats_values)
+        val formats = mutableListOf<Format>()
+        val containerPreference = sharedPreferences.getString("video_format", "")
+        videoFormats.reversed().forEach { formats.add(Format(it, containerPreference!!,"Default","", "",0, it.split("_")[0])) }
+        formatIDPreference.forEach { formats.add(Format(it, containerPreference!!,"Default","", "",1, it)) }
+        return formats
     }
 
     private val pipedURL = sharedPreferences.getString("piped_instance", defaultPipedURL)?.ifEmpty { defaultPipedURL }?.removeSuffix("/")

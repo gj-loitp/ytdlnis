@@ -4,11 +4,8 @@ import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
-import android.content.Intent
 import android.content.SharedPreferences
-import android.graphics.Color
 import android.os.Bundle
-import android.util.DisplayMetrics
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -24,20 +21,16 @@ import com.deniscerri.ytdlnis.database.models.DownloadItem
 import com.deniscerri.ytdlnis.database.viewmodel.CommandTemplateViewModel
 import com.deniscerri.ytdlnis.util.InfoUtil
 import com.deniscerri.ytdlnis.util.UiUtil
-import com.google.android.material.bottomappbar.BottomAppBar
+import com.deniscerri.ytdlnis.util.UiUtil.enableTextHighlight
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.neo.highlight.core.Highlight
-import com.neo.highlight.util.listener.HighlightTextWatcher
-import com.neo.highlight.util.scheme.ColorScheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.*
-import java.util.regex.Pattern
 
 
-class AddExtraCommandsDialog(private val item: DownloadItem, private val callback: ExtraCommandsListener) : BottomSheetDialogFragment() {
+class AddExtraCommandsDialog(private val item: DownloadItem?, private val callback: ExtraCommandsListener) : BottomSheetDialogFragment() {
     private lateinit var infoUtil: InfoUtil
     private lateinit var sharedPreferences: SharedPreferences
     private lateinit var commandTemplateViewModel: CommandTemplateViewModel
@@ -76,6 +69,7 @@ class AddExtraCommandsDialog(private val item: DownloadItem, private val callbac
 
     }
 
+    @SuppressLint("SetTextI18n")
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -86,32 +80,19 @@ class AddExtraCommandsDialog(private val item: DownloadItem, private val callbac
         val text = view.findViewById<EditText>(R.id.command)
         val templates = view.findViewById<Button>(R.id.commands)
         val shortcuts = view.findViewById<Button>(R.id.shortcuts)
-        val currentCommand = infoUtil.parseYTDLRequestString(infoUtil.buildYoutubeDLRequest(item))
         val currentText =  view.findViewById<TextView>(R.id.currentText)
-        currentText?.text = currentCommand
 
+        if (item != null){
+            val currentCommand = infoUtil.parseYTDLRequestString(infoUtil.buildYoutubeDLRequest(item))
+            currentText?.text = currentCommand
+        }else{
+            view.findViewById<View>(R.id.current).visibility = View.GONE
+        }
 
-        //init syntax highlighter
-        val highlight = Highlight()
-        val highlightWatcher = HighlightTextWatcher()
+        text.enableTextHighlight()
+        currentText.enableTextHighlight()
 
-        val schemes = listOf(
-            ColorScheme(Pattern.compile("([\"'])(?:\\\\1|.)*?\\1"), Color.parseColor("#FC8500")),
-            ColorScheme(Pattern.compile("yt-dlp"), Color.parseColor("#00FF00")),
-            ColorScheme(Pattern.compile("(https?://(?:www\\.|(?!www))[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|www\\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\\.[^\\s]{2,}|https?://(?:www\\.|(?!www))[a-zA-Z0-9]+\\.[^\\s]{2,}|www\\.[a-zA-Z0-9]+\\.[^\\s]{2,})"), Color.parseColor("#b5942f")),
-            ColorScheme(Pattern.compile("\\d+(\\.\\d)?%"), Color.parseColor("#43a564"))
-        )
-
-        highlight.addScheme(
-            *schemes.map { it }.toTypedArray()
-        )
-        highlightWatcher.addScheme(
-            *schemes.map { it }.toTypedArray()
-        )
-        highlight.setSpan(currentText)
-        currentText.addTextChangedListener(highlightWatcher)
-
-        text?.setText(item.extraCommands)
+        text?.setText(item?.extraCommands)
         val imm = activity?.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         text!!.postDelayed({
             text.setSelection(text.length())
@@ -139,8 +120,10 @@ class AddExtraCommandsDialog(private val item: DownloadItem, private val callbac
                 Toast.makeText(context, getString(R.string.add_template_first), Toast.LENGTH_SHORT).show()
             }else{
                 lifecycleScope.launch {
-                    UiUtil.showCommandTemplates(requireActivity(), commandTemplateViewModel){ template ->
-                        text.text.insert(text.selectionStart, "${template.content} ")
+                    UiUtil.showCommandTemplates(requireActivity(), commandTemplateViewModel){ templates ->
+                        templates.forEach {
+                            text.text.insert(text.selectionStart, "${it.content} ")
+                        }
                         text.postDelayed({
                             text.requestFocus()
                             imm.showSoftInput(text, 0)
@@ -153,9 +136,14 @@ class AddExtraCommandsDialog(private val item: DownloadItem, private val callbac
         shortcuts.setOnClickListener {
             lifecycleScope.launch {
                 if (shortcutCount > 0){
-                    UiUtil.showShortcuts(requireActivity(), commandTemplateViewModel) {sh ->
-                        text.text.insert(text.selectionStart, " $sh ")
-                    }
+                    UiUtil.showShortcuts(requireActivity(), commandTemplateViewModel,
+                        itemSelected = {sh ->
+                            text.setText("${text.text} $sh")
+                        },
+                        itemRemoved = {removed ->
+                            text.setText(text.text.replace("(${Regex.escape(removed)})(?!.*\\1)".toRegex(), ""))
+                            text.setSelection(text.text.length)
+                        })
                 }
             }
         }

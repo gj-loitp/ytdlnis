@@ -15,10 +15,8 @@ import androidx.viewpager2.widget.ViewPager2
 import androidx.work.WorkManager
 import com.deniscerri.ytdlnis.MainActivity
 import com.deniscerri.ytdlnis.R
-import com.deniscerri.ytdlnis.database.repository.DownloadRepository
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.util.NotificationUtil
-import com.deniscerri.ytdlnis.work.DownloadWorker
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.tabs.TabLayout
@@ -105,7 +103,10 @@ class DownloadQueueMainFragment : Fragment(){
         initMenu()
 
         if (arguments?.getString("tab") != null){
-            tabLayout.selectTab(tabLayout.getTabAt(3))
+            tabLayout.getTabAt(3)!!.select()
+            viewPager2.postDelayed( {
+                viewPager2.setCurrentItem(3, false)
+            }, 200)
         }
     }
 
@@ -157,14 +158,12 @@ class DownloadQueueMainFragment : Fragment(){
         lifecycleScope.launch {
             val notificationUtil = NotificationUtil(requireContext())
             val activeAndQueued = withContext(Dispatchers.IO){
-                downloadViewModel.getActiveAndQueuedDownloads()
+                downloadViewModel.getActiveAndQueuedDownloadIDs()
             }
-            activeAndQueued.forEach {
-                it.status = DownloadRepository.Status.Cancelled.toString()
-                downloadViewModel.updateDownload(it)
-                val id = it.id.toInt()
+            downloadViewModel.cancelActiveQueued()
+            activeAndQueued.forEach { id ->
                 YoutubeDL.getInstance().destroyProcessById(id.toString())
-                notificationUtil.cancelDownloadNotification(id)
+                notificationUtil.cancelDownloadNotification(id.toInt())
             }
         }
     }

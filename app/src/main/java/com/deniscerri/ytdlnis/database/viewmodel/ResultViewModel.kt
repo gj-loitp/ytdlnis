@@ -3,9 +3,9 @@ package com.deniscerri.ytdlnis.database.viewmodel
 import android.app.Application
 import android.content.SharedPreferences
 import android.util.Log
+import android.util.Patterns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import androidx.preference.PreferenceManager
@@ -17,6 +17,8 @@ import com.deniscerri.ytdlnis.database.models.SearchHistoryItem
 import com.deniscerri.ytdlnis.database.repository.ResultRepository
 import com.deniscerri.ytdlnis.database.repository.SearchHistoryRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.regex.Pattern
@@ -26,16 +28,28 @@ class ResultViewModel(application: Application) : AndroidViewModel(application) 
     val repository : ResultRepository
     private val searchHistoryRepository : SearchHistoryRepository
     val items : LiveData<List<ResultItem>>
-    val loadingItems = MutableLiveData<Boolean>()
+    data class ResultsUiState(
+        var processing: Boolean,
+        var errorMessage: Pair<Int, String>?,
+        var actions: MutableList<Pair<Int, ResultAction>>?
+    )
+
+    enum class ResultAction {
+        COPY_LOG
+    }
+
+    val uiState: MutableStateFlow<ResultsUiState> = MutableStateFlow(ResultsUiState(
+        processing = false,
+        errorMessage = null,
+        actions = null
+    ))
     private val sharedPreferences: SharedPreferences
 
     init {
         val dao = DBManager.getInstance(application).resultDao
-        val commandDao = DBManager.getInstance(application).commandTemplateDao
         repository = ResultRepository(dao, getApplication<Application>().applicationContext)
         searchHistoryRepository = SearchHistoryRepository(DBManager.getInstance(application).searchHistoryDao)
         items = repository.allResults.asLiveData()
-        loadingItems.postValue(false)
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(application)
     }
 
@@ -60,57 +74,48 @@ class ResultViewModel(application: Application) : AndroidViewModel(application) 
             deleteAll()
         }
     }
-    suspend fun parseQueries(inputQueries: List<String>){
-        if (inputQueries.size == 1){
-            parseQuery(inputQueries[0], true)
-        }else {
+    suspend fun parseQueries(inputQueries: List<String>) : List<ResultItem?> {
+        if (inputQueries.size > 1){
             repository.itemCount.value = inputQueries.size
-            loadingItems.postValue(true)
-            inputQueries.forEach {
-                parseQuery(it, false)
-            }
-            loadingItems.postValue(false)
         }
-    }
+        val resetResults = inputQueries.size == 1
 
-    suspend fun parseQuery(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?> {
-        if (resetResults)
-            loadingItems.postValue(true)
-        val type = getQueryType(inputQuery)
-        var res = arrayListOf<ResultItem?>()
+        uiState.update {it.copy(processing = true, errorMessage = null, actions = null)}
         return withContext(Dispatchers.IO){
-            try {
-                when (type) {
-                    "Search" -> {
-                        res = repository.search(inputQuery, resetResults)
+            val res = mutableListOf<ResultItem?>()
+            inputQueries.forEach { inputQuery ->
+                val type = getQueryType(inputQuery)
+                try {
+                     when (type) {
+                        "Search" -> res.addAll(repository.search(inputQuery, resetResults))
+                        "YT_Video" -> res.addAll(repository.getYoutubeVideo(inputQuery, resetResults))
+                        "YT_Playlist" -> res.addAll(repository.getPlaylist(inputQuery, resetResults))
+                        else -> res.addAll(repository.getDefault(inputQuery, resetResults))
                     }
-                    "YT_Video" -> {
-                        res = repository.getOne(inputQuery, resetResults)
-                    }
-                    "YT_Playlist" -> {
-                        res = repository.getPlaylist(inputQuery, resetResults)
-                    }
-                    "Default" -> {
-                        res = repository.getDefault(inputQuery, resetResults)
-                    }
+                } catch (e: Exception) {
+                    uiState.update {it.copy(
+                        processing = false,
+                        errorMessage = Pair(R.string.no_results, e.message.toString()),
+                        actions = mutableListOf(Pair(R.string.copy_log, ResultAction.COPY_LOG))
+                    )}
+                    Log.e(tag, e.toString())
                 }
-            } catch (e: Exception) {
-                Log.e(tag, e.toString())
             }
-            if (resetResults) loadingItems.postValue(false)
+            uiState.update {it.copy(processing = false)}
             res
         }
     }
+
     private fun getQueryType(inputQuery: String) : String {
         var type = "Search"
-        val p = Pattern.compile("(^(https?)://(www.)?(music.)?youtu(.be)?)|(^(https?)://(www.)?piped.video)")
+        val p = Pattern.compile("(^(https?)://(www.)?youtu(.be)?)|(^(https?)://(www.)?piped.video)")
         val m = p.matcher(inputQuery)
         if (m.find()) {
             type = "YT_Video"
             if (inputQuery.contains("playlist?list=")) {
                 type = "YT_Playlist"
             }
-        } else if (inputQuery.contains("http")) {
+        } else if (Patterns.WEB_URL.matcher(inputQuery).matches()) {
             type = "Default"
         }
         return type

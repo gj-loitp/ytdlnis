@@ -1,17 +1,19 @@
 package com.deniscerri.ytdlnis.database.dao
 
 import androidx.room.*
-import com.deniscerri.ytdlnis.database.models.CookieItem
 import com.deniscerri.ytdlnis.database.models.LogItem
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface LogDao {
-    @Query("SELECT * FROM logs ORDER BY id DESC")
+    @Query("SELECT id, title, downloadType, format, downloadTime, '' as content FROM logs ORDER BY id DESC")
     fun getAllLogs() : List<LogItem>
 
-    @Query("SELECT * FROM logs ORDER BY id DESC")
+    @Query("SELECT id, title, downloadType, format, downloadTime, '' as content FROM logs ORDER BY id DESC")
     fun getAllLogsFlow() : Flow<List<LogItem>>
+
+    @Query("SELECT * FROM logs WHERE id=:id LIMIT 1")
+    fun getLogFlowByID(id: Long) : Flow<LogItem>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: LogItem) : Long
@@ -21,6 +23,13 @@ interface LogDao {
 
     @Query("DELETE FROM logs WHERE id=:itemId")
     suspend fun delete(itemId: Long)
+
+    @Transaction
+    suspend fun deleteItems(list: List<LogItem>){
+        list.forEach{
+            delete(it.id)
+        }
+    }
 
     @Update(onConflict = OnConflictStrategy.REPLACE)
     suspend fun update(item: LogItem)

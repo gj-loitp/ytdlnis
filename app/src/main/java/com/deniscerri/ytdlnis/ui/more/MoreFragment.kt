@@ -19,15 +19,12 @@ import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.database.repository.DownloadRepository
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.ui.more.settings.SettingsActivity
+import com.deniscerri.ytdlnis.ui.more.terminal.TerminalActivity
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlin.system.exitProcess
 
 class MoreFragment : Fragment() {
@@ -51,7 +48,6 @@ class MoreFragment : Fragment() {
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
         return inflater.inflate(R.layout.fragment_more, container, false)
     }
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
@@ -64,15 +60,6 @@ class MoreFragment : Fragment() {
         cookies = view.findViewById(R.id.cookies)
         terminateApp = view.findViewById(R.id.terminate)
         settings = view.findViewById(R.id.settings)
-
-        val navHostFragment = parentFragmentManager.findFragmentById(R.id.frame_layout)
-
-        if (mainSharedPreferences.getBoolean("log_downloads", false)) {
-            logs.visibility = View.VISIBLE
-        }else {
-            logs.visibility = View.GONE
-        }
-
 
         terminal.setOnClickListener {
             val intent = Intent(context, TerminalActivity::class.java)

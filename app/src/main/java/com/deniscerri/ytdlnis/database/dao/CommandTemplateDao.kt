@@ -7,6 +7,25 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface CommandTemplateDao {
+    @Query("SELECT * FROM commandTemplates WHERE (title LIKE '%'||:query||'%' OR content LIKE '%'||:query||'%') ORDER BY " +
+            "CASE WHEN :sort = 'ASC' THEN id END ASC," +
+            "CASE WHEN :sort = 'DESC' THEN id END DESC," +
+            "CASE WHEN :sort = '' THEN id END DESC ")
+    fun getCommandsSortedByID(query : String, sort : String) : List<CommandTemplate>
+
+
+    @Query("SELECT * FROM commandTemplates WHERE (title LIKE '%'||:query||'%' OR content LIKE '%'||:query||'%') ORDER BY " +
+            "CASE WHEN :sort = 'ASC' THEN title COLLATE NOCASE END ASC," +
+            "CASE WHEN :sort = 'DESC' THEN title COLLATE NOCASE END DESC," +
+            "CASE WHEN :sort = '' THEN title COLLATE NOCASE END DESC ")
+    fun getCommandsSortedByTitle(query : String, sort : String) : List<CommandTemplate>
+
+    @Query("SELECT * FROM commandTemplates WHERE (title LIKE '%'||:query||'%' OR content LIKE '%'||:query||'%') ORDER BY " +
+            "CASE WHEN :sort = 'ASC' THEN length(content) END ASC," +
+            "CASE WHEN :sort = 'DESC' THEN length(content) END DESC," +
+            "CASE WHEN :sort = '' THEN length(content) END DESC ")
+    fun getCommandsSortedByContentLength(query : String,  sort : String) : List<CommandTemplate>
+
     @Query("SELECT * FROM commandTemplates ORDER BY id DESC")
     fun getAllTemplates() : List<CommandTemplate>
 
@@ -28,10 +47,13 @@ interface CommandTemplateDao {
     fun getTotalShortcutNumber() : Int
 
     @Query("SELECT * FROM commandTemplates WHERE id=:id LIMIT 1")
-    fun getTemplate(id: Long) : CommandTemplate
+    fun getTemplate(id: Long) : CommandTemplate?
+
+    @Query("SELECT * FROM commandTemplates WHERE content=:content LIMIT 1")
+    fun getTemplateByContent(content: String) : CommandTemplate?
 
     @Query("SELECT * FROM commandTemplates ORDER BY id DESC LIMIT 1")
-    fun getFirst() : CommandTemplate
+    fun getFirst() : CommandTemplate?
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(item: CommandTemplate)

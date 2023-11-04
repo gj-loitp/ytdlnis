@@ -1,7 +1,6 @@
 package com.deniscerri.ytdlnis.database.repository
 
 import android.content.Context
-import android.util.Log
 import com.deniscerri.ytdlnis.database.dao.ResultDao
 import com.deniscerri.ytdlnis.database.models.ResultItem
 import com.deniscerri.ytdlnis.util.InfoUtil
@@ -33,36 +32,28 @@ class ResultRepository(private val resultDao: ResultDao, private val context: Co
 
     suspend fun search(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?>{
         val infoUtil = InfoUtil(context)
-        try{
-            if (resetResults) deleteAll()
-            val res = infoUtil.search(inputQuery)
-            itemCount.value = res.size
-            res.forEach {
-                resultDao.insert(it!!)
-            }
-            return res
-        }catch (ignored: Exception){}
-        return arrayListOf()
+        if (resetResults) deleteAll()
+        val res = infoUtil.search(inputQuery)
+        itemCount.value = res.size
+        res.forEach {
+            resultDao.insert(it!!)
+        }
+        return res
     }
 
-    suspend fun getOne(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?>{
+    suspend fun getYoutubeVideo(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?>{
         val infoUtil = InfoUtil(context)
-        try {
-            val v = infoUtil.getYoutubeVideo(inputQuery)
-            if (resetResults) {
-                deleteAll()
-                itemCount.value = v.size
-            }else{
-                v.forEach { it?.playlistTitle = "ytdlnis-Search" }
-            }
-            v.forEach {
-                resultDao.insert(it!!)
-            }
-            return ArrayList(v)
-        } catch (e: Exception) {
-            Log.e(tag, e.toString())
+        val v = infoUtil.getYoutubeVideo(inputQuery)
+        if (resetResults) {
+            deleteAll()
+            itemCount.value = v.size
+        }else{
+            v.forEach { it?.playlistTitle = "ytdlnis-Search" }
         }
-        return arrayListOf()
+        v.forEach {
+            resultDao.insert(it!!)
+        }
+        return ArrayList(v)
     }
 
     suspend fun getPlaylist(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?>{
@@ -89,22 +80,17 @@ class ResultRepository(private val resultDao: ResultDao, private val context: Co
 
     suspend fun getDefault(inputQuery: String, resetResults: Boolean) : ArrayList<ResultItem?> {
         val infoUtil = InfoUtil(context)
-        try {
-            val items = infoUtil.getFromYTDL(inputQuery)
-            if (resetResults) {
-                deleteAll()
-                itemCount.value = items.size
-            }else{
-                items.forEach { it!!.playlistTitle = "ytdlnis-Search" }
-            }
-            items.forEach {
-                resultDao.insert(it!!)
-            }
-            return items
-        } catch (e: Exception) {
-            Log.e(tag, e.toString())
+        val items = infoUtil.getFromYTDL(inputQuery)
+        if (resetResults) {
+            deleteAll()
+            itemCount.value = items.size
+        }else{
+            items.forEach { it!!.playlistTitle = "ytdlnis-Search" }
         }
-        return arrayListOf()
+        items.forEach {
+            resultDao.insert(it!!)
+        }
+        return items
     }
 
     suspend fun delete(item: ResultItem){

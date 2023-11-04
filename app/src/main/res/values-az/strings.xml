@@ -104,7 +104,6 @@
     <string name="enable_mtime_summary">HTTP Son Dəyişdirilən başlığın son dəyişdirilən vaxt kimi tənzimlə</string>
     <string name="edit">Redaktə et</string>
     <string name="import_from_clipboard">Buferdən idxal et</string>
-    <string name="workmanager_updated">Bu seçimə təsir etmək üçün aktiv yükləmələriniz yoxdur və tətbiqi yenidən başlatmalısınız!</string>
     <string name="select">Seç</string>
     <string name="all_items_selected">Bütün elementlər seçildi</string>
     <string name="save_dir">Kataloqda saxla</string>
@@ -230,7 +229,7 @@
     <string name="finished_download_notification_channel_name">Bitmiş Yükləmələr</string>
     <string name="finished_download_notification_channel_description">Bitmiş və ya nasaz yükləmələr üçün bildiriş</string>
     <string name="quick_download">Sürətli Yükləmə</string>
-    <string name="quick_download_summary">Əvvəlcədən məlumat əldə etmə</string>
+    <string name="quick_download_summary">Yükləmə kartında məlumat əldə etmə</string>
     <string name="remove_audio">Səsi Sil</string>
     <string name="download_now">İndi Yüklə</string>
     <string name="preferred_format_id">Üstünlük Verilən Format ID</string>
@@ -264,11 +263,9 @@
     <string name="swipe_gestures_summary">Bəzi fəaliyyətlər üçün elementləri sürüşdür</string>
     <string name="crop_thumb">Miniatürü Kəs</string>
     <string name="crop_thumb_summary">Səs yükləmələr üçün miniatürü kvadrat şəklində kəs</string>
-    <string name="locale">Yer</string>
     <string name="audio_only_item">Bu element yalnız səs formatları ehtiva edir</string>
     <string name="move_temporary_files">Müvəqqəti Faylları Köçür</string>
     <string name="move_temporary_files_summary">Toplanan faylları yükləmələr qovluğuna köçür</string>
-    <string name="format_filtering_hint_2">Bu seçimi işlətmək üçün bütün elementlər səs və ya video olmalıdır</string>
     <string name="piped_instance">Piped İnstansiya</string>
     <string name="piped_instance_summary">PIPED API Server yazın, tətbiq YouTube sorğuları və formatları üçün işlədə bilər</string>
     <string name="custom_audio_quality">Fərdi Səs Keyfiyyəti İşlət</string>
@@ -278,8 +275,7 @@
     <string name="force_keyframes">Kəsiklərdə əsas kadrları məcbur et</string>
     <string name="force_keyframes_summary">Daha yavaş emal, lakin daha dəqiq kəsiklər</string>
     <string name="save_for_later">Yükləmə Sonraya Saxlanılsın\?</string>
-    <string name="subtitle_format">Titr Formatı
-\n</string>
+    <string name="subtitle_format">Titr Formatı</string>
     <string name="hide_thumbnails">Miniatürləri Gizlət</string>
     <string name="show_terminal">Paylaş Menyusunda Sıxac Göstər</string>
     <string name="saved">Saxlanıldı</string>
@@ -293,5 +289,19 @@
     <string name="extra_command">Əlavə Əmr</string>
     <string name="use_cookies">Məlumat Bazası İstifadə Et</string>
     <string name="embed_metadata">Üst məlumat yerləşdir</string>
-    <string name="embed_metadata_summary">Video fayla üst məlumat yerləşdir. Həmçinin, əgər varsa, bölmələr/infojsonlar yerləşdirir</string>
+    <string name="embed_metadata_summary">Səs faylına üst məlumat yerləşdir və təhlil et.</string>
+    <string name="update_formats_background">Arxa Planda Formatları Yenilə</string>
+    <string name="auto_update_ytdlp">Yt-dlp-ni Avtomatik Yenilə</string>
+    <string name="use_sponsorblock">SponsorBlock istifadə et</string>
+    <string name="scheduling">Planlaşdırma</string>
+    <string name="cache_first_summary">Qalıq faylların daxili yaddaşa yüklə, sonra seçdiyiniz qovluğa köçürün. Birbaşa yaddaşa yaza bilmədiyinizdə bunu istifadə edin</string>
+    <string name="cache_first">Əvvəlcə Qalığı Yükləyir</string>
+    <string name="use_scheduler">Plan Üzrə Yükləmə</string>
+    <string name="update_app_beta_summary">Sınaq proqramında qeydiyyatdan keçin. Daxilində səhvlər ola bilər.</string>
+    <string name="update_app_beta">Sınaq Buraxılışlar</string>
+    <string name="auto">Avtomatik</string>
+    <string name="preferred_audio_codec">Üstünlük Verilən Səs Kodlayıcı</string>
+    <string name="preferred_video_codec">Üstünlük Verilən Video Kodlayıcı</string>
+    <string name="sponsorblock_api_url">SponsorBlock API URL</string>
+    <string name="loading">Yüklənir</string>
 </resources>

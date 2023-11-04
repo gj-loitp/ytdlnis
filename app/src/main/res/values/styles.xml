@@ -5,6 +5,7 @@
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:colorBackgroundCacheHint">@null</item>
         <item name="android:windowContentOverlay">@null</item>
+        <item name="preferenceTheme">@style/PreferenceTheme</item>
     </style>
 
     <style name="Divider">
@@ -39,11 +40,6 @@
         <item name="cornerSizeBottomRight">12dp</item>
     </style>
 
-    <style name="ShapeAppearanceOverlay.Chip.Middle" parent="ShapeAppearance.MaterialComponents.SmallComponent">
-        <item name="cornerFamily">rounded</item>
-        <item name="cornerSize">0dp</item>
-    </style>
-
     <style name="Preference.SwitchPreferenceCompat.Material3" parent="@style/Preference.SwitchPreferenceCompat.Material">
         <item name="widgetLayout">@layout/preferece_material_switch</item>
     </style>
@@ -59,4 +55,9 @@
     <style name="FullScreenDialogTheme" parent="MaterialAlertDialog.Material3">
         <item name="android:windowIsFloating">false</item>
     </style>
+
+    <style name="PreferenceTheme" parent="PreferenceThemeOverlay">
+        <item name="singleLineTitle">false</item>
+    </style>
+
 </resources>

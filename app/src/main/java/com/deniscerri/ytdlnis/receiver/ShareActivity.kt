@@ -13,10 +13,8 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
-import android.view.Window
+import android.util.Patterns
 import android.view.WindowManager
-import android.widget.TextView
-import android.widget.Toast
 import androidx.core.app.ActivityCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
@@ -32,9 +30,8 @@ import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdlnis.ui.BaseActivity
 import com.deniscerri.ytdlnis.ui.downloadcard.DownloadBottomSheetDialog
-import com.deniscerri.ytdlnis.ui.downloadcard.SelectPlaylistItemsBottomSheetDialog
+import com.deniscerri.ytdlnis.ui.downloadcard.SelectPlaylistItemsDialog
 import com.deniscerri.ytdlnis.util.ThemeUtil
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -95,10 +92,9 @@ class ShareActivity : BaseActivity() {
         askPermissions()
 
         val action = intent.action
-        val type = intent.clipData
         Log.e("aa", intent.toString())
-        if (Intent.ACTION_SEND == action && type != null) {
-            if (intent.getStringExtra(Intent.EXTRA_TEXT) == null){
+        if (Intent.ACTION_SEND == action || Intent.ACTION_VIEW == action) {
+            if (intent.getStringExtra(Intent.EXTRA_TEXT) == null && Intent.ACTION_SEND == action){
                 intent.setClass(this, MainActivity::class.java)
                 startActivity(intent)
                 finishAffinity()
@@ -107,73 +103,71 @@ class ShareActivity : BaseActivity() {
 
             runCatching { supportFragmentManager.popBackStack() }
 
-            quickDownload = intent.getBooleanExtra("quick_download", sharedPreferences.getBoolean("quick_download", false))
-
-            val loadingBottomSheet = BottomSheetDialog(this)
-            loadingBottomSheet.requestWindowFeature(Window.FEATURE_NO_TITLE)
-            loadingBottomSheet.setContentView(R.layout.please_wait_bottom_sheet)
-            loadingBottomSheet.show()
-            val cancel = loadingBottomSheet.findViewById<TextView>(R.id.cancel)
-            cancel!!.setOnClickListener {
-                this.finish()
+            quickDownload = intent.getBooleanExtra("quick_download", sharedPreferences.getBoolean("quick_download", false) || sharedPreferences.getString("preferred_download_type", "video") == "command")
+            val url = when(action){
+                Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)!!
+                else -> intent.dataString!!
+            }
+            val matcher = Patterns.WEB_URL.matcher(url)
+            val inputQuery = if (matcher.find()){
+               matcher.group()
+            }else{
+                url
             }
 
-            val inputQuery = intent.getStringExtra(Intent.EXTRA_TEXT)!!
+            val type = intent.getStringExtra("TYPE")
+            val background = intent.getBooleanExtra("BACKGROUND", false)
+            val command = intent.getStringExtra("COMMAND") ?: ""
+
             lifecycleScope.launch {
-                try {
-                    val result = resultViewModel.getItemByURL(inputQuery)
-                    loadingBottomSheet.dismiss()
-                    showDownloadSheet(result)
-                }catch (e: Exception){
+                var result = withContext(Dispatchers.IO){
+                    resultViewModel.getItemByURL(inputQuery)
+                }
+                if (result == null) {
                     resultViewModel.deleteAll()
-                    if (quickDownload && inputQuery.matches("(https?://(?:www\\.|(?!www))[a-zA-Z\\d][a-zA-Z\\d-]+[a-zA-Z\\d]\\.\\S{2,}|www\\.[a-zA-Z\\d][a-zA-Z\\d-]+[a-zA-Z\\d]\\.\\S{2,}|https?://(?:www\\.|(?!www))[a-zA-Z\\d]+\\.\\S{2,}|www\\.[a-zA-Z\\d]+\\.\\S{2,})".toRegex())){
-                        val result = downloadViewModel.createEmptyResultItem(inputQuery)
-                        loadingBottomSheet.dismiss()
-                        showDownloadSheet(result)
-                    }else{
-                        val res = withContext(Dispatchers.IO){
-                            resultViewModel.parseQuery(inputQuery, true)
-                        }
-                        if (res.isEmpty()) {
-                            Toast.makeText(this@ShareActivity, "No Results Found!", Toast.LENGTH_SHORT).show()
-                            exit()
+                    result = downloadViewModel.createEmptyResultItem(inputQuery)
+                }
+                val downloadType = DownloadViewModel.Type.valueOf(type ?: downloadViewModel.getDownloadType(url = result.url).toString())
+                if (sharedPreferences.getBoolean("download_card", true) && !background){
+                    val bottomSheet = DownloadBottomSheetDialog(
+                        result = result,
+                        type = downloadType)
+                    bottomSheet.show(supportFragmentManager, "downloadSingleSheet")
+                }else{
+                    lifecycleScope.launch(Dispatchers.IO){
+                        val downloadItem = downloadViewModel.createDownloadItemFromResult(
+                            result = result,
+                            givenType = downloadType)
+
+                        if (downloadType == DownloadViewModel.Type.command && command.isNotBlank()){
+                            downloadItem.format.format_note = command
                         }else{
-                            loadingBottomSheet.dismiss()
-                            if (res.size == 1){
-                                showDownloadSheet(res[0]!!)
-                            }else{
-                                showSelectPlaylistItems(res.toList())
-                            }
+                            downloadItem.extraCommands = downloadItem.extraCommands + " $command"
                         }
+                        downloadViewModel.queueDownloads(listOf(downloadItem))
                     }
+                    this@ShareActivity.finish()
                 }
             }
         }
     }
 
     private fun showDownloadSheet(it: ResultItem){
-        if (sharedPreferences.getBoolean("download_card", true)){
-            val bottomSheet = DownloadBottomSheetDialog(it, DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!), null, quickDownload)
-            bottomSheet.show(supportFragmentManager, "downloadSingleSheet")
-        }else{
-            lifecycleScope.launch(Dispatchers.IO){
-                val downloadItem = downloadViewModel.createDownloadItemFromResult(it, DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!))
-                downloadViewModel.queueDownloads(listOf(downloadItem))
-            }
-            this.finish()
-        }
+
     }
 
     private fun showSelectPlaylistItems(it: List<ResultItem?>){
         if (sharedPreferences.getBoolean("download_card", true)){
-            val bottomSheet = SelectPlaylistItemsBottomSheetDialog(it, DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!))
+            val bottomSheet = SelectPlaylistItemsDialog(it, DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!))
             bottomSheet.show(supportFragmentManager, "downloadPlaylistSheet")
         }else{
             lifecycleScope.launch(Dispatchers.IO){
                 val downloadItems = mutableListOf<DownloadItem>()
                 lifecycleScope.launch(Dispatchers.IO){
                     it.forEach { res ->
-                        val i = downloadViewModel.createDownloadItemFromResult(res!!, DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!))
+                        val i = downloadViewModel.createDownloadItemFromResult(
+                            result = res!!,
+                            givenType = DownloadViewModel.Type.valueOf(sharedPreferences.getString("preferred_download_type", "video")!!))
                         i.format = downloadViewModel.getLatestCommandTemplateAsFormat()
                         downloadItems.add(i)
                     }

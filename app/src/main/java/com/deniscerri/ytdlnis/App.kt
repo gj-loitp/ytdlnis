@@ -5,18 +5,7 @@ import android.os.Looper
 import android.widget.Toast
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
-import androidx.work.Configuration
-import androidx.work.Constraints
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.PeriodicWorkRequest
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.WorkQuery
 import com.deniscerri.ytdlnis.util.NotificationUtil
-import com.deniscerri.ytdlnis.util.UpdateUtil
-import com.deniscerri.ytdlnis.work.UpdateYTDLWorker
-import com.google.android.gms.common.internal.Constants
 import com.yausername.aria2c.Aria2c
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
@@ -26,8 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.util.*
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
 
 
 class App : Application() {
@@ -35,37 +22,22 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        createNotificationChannels()
-        val sharedPreferences =  PreferenceManager.getDefaultSharedPreferences(this)
+
+        val sharedPreferences =  PreferenceManager.getDefaultSharedPreferences(this@App)
         setDefaultValues()
+
         applicationScope = CoroutineScope(SupervisorJob())
         applicationScope.launch((Dispatchers.IO)) {
             try {
+                createNotificationChannels()
+
                 initLibraries()
                 val appVer = sharedPreferences.getString("version", "")!!
                 if(appVer.isEmpty() || appVer != BuildConfig.VERSION_NAME){
-                    UpdateUtil(this@App).updateYoutubeDL()
                     sharedPreferences.edit(commit = true){
                         putString("version", BuildConfig.VERSION_NAME)
                     }
                 }
-
-                //init yt-dlp auto update with work request
-                val constraints = Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
-                    .setRequiresDeviceIdle(true)
-                    .build()
-
-                val periodicWorkRequest = PeriodicWorkRequestBuilder<UpdateYTDLWorker>(1, TimeUnit.DAYS)
-                    .setConstraints(constraints)
-                    .build()
-
-                WorkManager.getInstance(this@App).enqueueUniquePeriodicWork(
-                    "ytdlp-Updater",
-                    ExistingPeriodicWorkPolicy.KEEP,
-                    periodicWorkRequest
-                )
-
             }catch (e: Exception){
                 Looper.prepare().runCatching {
                     Toast.makeText(this@App, e.message, Toast.LENGTH_SHORT).show()
@@ -73,14 +45,6 @@ class App : Application() {
                 e.printStackTrace()
             }
         }
-
-        WorkManager.initialize(
-            this@App,
-            Configuration.Builder()
-                .setExecutor(Executors.newFixedThreadPool(
-                    sharedPreferences.getInt("concurrent_downloads", 1)))
-                .build())
-
     }
     @Throws(YoutubeDLException::class)
     private fun initLibraries() {

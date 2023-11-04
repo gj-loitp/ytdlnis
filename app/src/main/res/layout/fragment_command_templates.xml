@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="com.deniscerri.ytdlnis.ui.more.TerminalActivity">
+    tools:context="com.deniscerri.ytdlnis.ui.more.terminal.TerminalActivity">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
@@ -22,69 +22,79 @@
             app:navigationIcon="@drawable/ic_back"
             android:layout_height="match_parent"/>
 
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            app:layout_scrollFlags="scroll|enterAlways"
+            android:layout_margin="10dp">
+
+            <HorizontalScrollView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <LinearLayout
+                    android:id="@+id/history_selection_chips"
+                    android:layout_width="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_height="wrap_content">
+
+                    <com.google.android.material.chip.ChipGroup
+                        android:layout_width="match_parent"
+                        app:selectionRequired="false"
+                        app:singleSelection="true"
+                        android:layout_height="wrap_content">
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/newTemplate"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/new_template"
+                            app:chipIcon="@drawable/ic_plus" />
+
+                        <com.google.android.material.chip.Chip
+                            android:id="@+id/shortcuts"
+                            style="@style/Widget.Material3.Chip.Assist"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="@string/shortcuts"
+                            app:chipIcon="@drawable/ic_shortcut" />
+                    </com.google.android.material.chip.ChipGroup>
+
+                    <View style="@style/Divider.Vertical"/>
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/sortChip"
+                        style="@style/Widget.Material3.Chip.Assist"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/sort_by"
+                        app:chipIcon="@drawable/ic_down" />
+
+
+                </LinearLayout>
+
+            </HorizontalScrollView>
+
+        </RelativeLayout>
+
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <RelativeLayout
+    <androidx.recyclerview.widget.RecyclerView
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        android:id="@+id/template_recyclerview"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:orientation="vertical"
-        app:layout_behavior="com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior">
+        android:clipToPadding="false"
+        >
+
+    </androidx.recyclerview.widget.RecyclerView>
 
 
-    <HorizontalScrollView
-            android:id="@+id/chips_command"
-            android:layout_width="wrap_content"
-            android:scrollbars="none"
-            android:layout_margin="10dp"
-            android:layout_height="wrap_content">
-
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content">
-
-                <com.google.android.material.chip.ChipGroup
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    app:selectionRequired="false"
-                    app:singleSelection="false">
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/newTemplate"
-                        style="@style/Widget.Material3.Chip.Assist"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/new_template"
-                        app:chipIcon="@drawable/ic_plus" />
-
-                    <com.google.android.material.chip.Chip
-                        android:id="@+id/shortcuts"
-                        style="@style/Widget.Material3.Chip.Assist"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/shortcuts"
-                        app:chipIcon="@drawable/ic_shortcut" />
-
-                </com.google.android.material.chip.ChipGroup>
-
-            </LinearLayout>
-
-        </HorizontalScrollView>
-
-        <androidx.recyclerview.widget.RecyclerView
-            android:layout_below="@+id/chips_command"
-            android:id="@+id/template_recyclerview"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            >
-
-        </androidx.recyclerview.widget.RecyclerView>
-
-    </RelativeLayout>
-
-
-    <include layout="@layout/history_no_results"
+    <include layout="@layout/no_results"
         android:visibility="gone" />
 
 

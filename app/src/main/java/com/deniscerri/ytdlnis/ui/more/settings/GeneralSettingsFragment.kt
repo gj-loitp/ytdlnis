@@ -1,13 +1,18 @@
 package com.deniscerri.ytdlnis.ui.more.settings
 
+import android.app.Activity
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build.VERSION
-import android.os.Build.VERSION_CODES
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.app.ActivityCompat
 import androidx.core.os.LocaleListCompat
 import androidx.preference.ListPreference
 import androidx.preference.Preference
@@ -30,6 +35,7 @@ class GeneralSettingsFragment : BaseSettingsFragment() {
     private var highContrast: SwitchPreferenceCompat? = null
     private var locale: ListPreference? = null
     private var showTerminalShareIcon: SwitchPreferenceCompat? = null
+    private var ignoreBatteryOptimization: Preference? = null
 
     private var updateUtil: UpdateUtil? = null
     private var activeDownloadCount = 0
@@ -52,25 +58,23 @@ class GeneralSettingsFragment : BaseSettingsFragment() {
         locale = findPreference("locale")
         showTerminalShareIcon = findPreference("show_terminal")
 
-        if(VERSION.SDK_INT < VERSION_CODES.TIRAMISU){
-            val values = resources.getStringArray(R.array.language_values)
-            val entries = mutableListOf<String>()
-            values.forEach {
-                entries.add(Locale(it).getDisplayName(Locale(it)))
-            }
-            language!!.entries = entries.toTypedArray()
-        }else{
-            language!!.isVisible = false
+        val values = resources.getStringArray(R.array.language_values)
+        val entries = mutableListOf<String>()
+        values.forEach {
+            entries.add(Locale(it).getDisplayName(Locale(it)))
         }
+        language!!.entries = entries.toTypedArray()
 
         if(language!!.value == null) language!!.value = Locale.getDefault().language
         language!!.summary = Locale(language!!.value).getDisplayLanguage(Locale(language!!.value))
+
         language!!.onPreferenceChangeListener =
             Preference.OnPreferenceChangeListener { _: Preference?, newValue: Any ->
                 language!!.summary = Locale(newValue.toString()).getDisplayLanguage(Locale(newValue.toString()))
                 AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(newValue.toString()))
                 true
             }
+
 
         theme!!.summary = theme!!.entry
         theme!!.onPreferenceChangeListener =
@@ -126,5 +130,25 @@ class GeneralSettingsFragment : BaseSettingsFragment() {
                 }
                 true
             }
+
+        ignoreBatteryOptimization = findPreference("ignore_battery")
+        ignoreBatteryOptimization!!.onPreferenceClickListener =
+            Preference.OnPreferenceClickListener {
+                val intent = Intent()
+                intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                intent.data = Uri.parse("package:" + requireContext().packageName)
+                startActivity(intent)
+                true
+            }
     }
+
+    override fun onResume() {
+        val packageName: String = requireContext().packageName
+        val pm = requireContext().applicationContext.getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (pm.isIgnoringBatteryOptimizations(packageName)) {
+            ignoreBatteryOptimization!!.isVisible = false
+        }
+        super.onResume()
+    }
+
 }

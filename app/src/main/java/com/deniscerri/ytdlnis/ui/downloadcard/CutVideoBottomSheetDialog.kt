@@ -15,6 +15,7 @@ import android.view.View
 import android.widget.*
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.children
+import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem.fromUri
 import androidx.media3.common.Player
@@ -23,10 +24,12 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.ui.PlayerView
+import androidx.preference.PreferenceManager
 import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.database.models.ChapterItem
 import com.deniscerri.ytdlnis.database.models.DownloadItem
 import com.deniscerri.ytdlnis.util.InfoUtil
+import com.deniscerri.ytdlnis.util.UiUtil
 import com.deniscerri.ytdlnis.util.UiUtil.setTextAndRecalculateWidth
 import com.deniscerri.ytdlnis.util.VideoPlayerUtil
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -37,6 +40,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.materialswitch.MaterialSwitch
 import com.google.android.material.slider.RangeSlider
 import com.google.android.material.textfield.TextInputLayout
 import com.google.gson.Gson
@@ -68,6 +72,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
     private lateinit var toTextInput : TextInputLayout
     private lateinit var cancelBtn : Button
     private lateinit var okBtn : Button
+    private lateinit var forceKeyframes: MaterialSwitch
     private lateinit var suggestedChips: ChipGroup
     private lateinit var suggestedChapters : LinearLayout
     
@@ -129,6 +134,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
         newCutBtn = view.findViewById(R.id.new_cut)
         resetBtn = view.findViewById(R.id.reset_all)
         chipGroup = view.findViewById(R.id.cut_list_chip_group)
+        forceKeyframes = view.findViewById(R.id.force_keyframes)
 
 
         selectedCuts = if (chipGroup.childCount == 0){
@@ -152,7 +158,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                     if (urls.isNullOrEmpty()) {
                         infoUtil.getStreamingUrlAndChapters(item.url)
                     }else {
-                        urls!!.split("\n").toMutableList()
+                        urls.split("\n").toMutableList()
                     }
                 }
 
@@ -198,11 +204,14 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                 val currentTime = infoUtil.formatIntegerDuration(p, Locale.US)
                 durationText.text = "$currentTime / ${item.duration}"
                 val startTimestamp = convertStringToTimestamp(fromTextInput.editText!!.text.toString())
-                val endTimestamp = convertStringToTimestamp(toTextInput.editText!!.text.toString())
-                if (p >= endTimestamp){
-                    player.prepare()
-                    player.seekTo((startTimestamp * 1000).toLong())
+                if (toTextInput.editText!!.text.isNotBlank()){
+                    val endTimestamp = convertStringToTimestamp(toTextInput.editText!!.text.toString())
+                    if (p >= endTimestamp){
+                        player.prepare()
+                        player.seekTo((startTimestamp * 1000).toLong())
+                    }
                 }
+
             }
         }
 
@@ -246,6 +255,15 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
             }catch (ignored: Exception) {}
         }
 
+        val prefs = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        val editor = prefs.edit()
+
+        forceKeyframes.isChecked = prefs.getBoolean("force_keyframes", false)
+        forceKeyframes.setOnCheckedChangeListener { compoundButton, b ->
+            editor.putBoolean("force_keyframes", forceKeyframes.isChecked)
+            editor.apply()
+        }
+
     }
 
     @SuppressLint("SetTextI18n")
@@ -253,31 +271,25 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
         fromTextInput.editText!!.setTextAndRecalculateWidth("0:00")
         toTextInput.editText!!.setTextAndRecalculateWidth(item.duration)
 
-        rangeSlider.addOnSliderTouchListener(object : RangeSlider.OnSliderTouchListener {
-            override fun onStartTrackingTouch(slider: RangeSlider) {
+        rangeSlider.setOnTouchListener { v, event -> // Handle touch events here
+            when (event.action) {
+                MotionEvent.ACTION_MOVE -> {
+                    updateFromSlider()
+                }
 
+                MotionEvent.ACTION_UP -> {
+                    updateFromSlider()
+                }
             }
+            // Return 'false' to allow the event to continue propagating or 'true' to consume it
+            false
+        }
+        rangeSlider.performClick()
 
-            override fun onStopTrackingTouch(slider: RangeSlider) {
-                val values = rangeSlider.values
-                val startTimestamp = (values[0].toInt() * timeSeconds) / 100
-                val endTimestamp = (values[1].toInt() * timeSeconds) / 100
-
-                val startTimestampString = infoUtil.formatIntegerDuration(startTimestamp, Locale.US)
-                val endTimestampString = infoUtil.formatIntegerDuration(endTimestamp, Locale.US)
-
-                fromTextInput.editText!!.setTextAndRecalculateWidth(startTimestampString)
-                toTextInput.editText!!.setTextAndRecalculateWidth(endTimestampString)
-
-
-                okBtn.isEnabled = values[0] != 0F && values[1] != 100F
-
-                try {
-                    player.seekTo((startTimestamp * 1000).toLong())
-                    player.play()
-                }catch (ignored: Exception) {}
-            }
-        })
+        rangeSlider.setOnDragListener { view, dragEvent ->
+            updateFromSlider()
+            false
+        }
 
         fromTextInput.editText!!.setOnKeyListener(object : View.OnKeyListener {
 
@@ -304,8 +316,10 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                         startValue = 0F
                     }
 
+                    fromTextInput.editText!!.setTextAndRecalculateWidth(fromTextInput.editText!!.text.toString())
+
                     rangeSlider.setValues(startValue, endValue)
-                    okBtn.isEnabled = startValue != 0F && endValue != 100F
+                    okBtn.isEnabled = startValue != 0F || endValue != 100F
                     try {
                         player.seekTo(seconds.toLong() * 1000)
                         player.play()
@@ -324,7 +338,6 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                 if ((event!!.action == KeyEvent.ACTION_DOWN) &&
                     (keyCode == KeyEvent.KEYCODE_ENTER)) {
 
-                    val values = rangeSlider.values
                     var endTimestamp = (rangeSlider.valueTo.toInt() * timeSeconds) / 100
 
                     toTextInput.editText!!.clearFocus()
@@ -341,14 +354,16 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
 
                     if (seconds == 0) {
                         toTextInput.editText!!.setTextAndRecalculateWidth(infoUtil.formatIntegerDuration(endTimestamp, Locale.US))
-                    }else if (endValue > 100 || endValue <= rangeSlider.valueFrom.toInt()){
+                    }else if (endValue <= rangeSlider.valueFrom.toInt()){
                         toTextInput.editText!!.setTextAndRecalculateWidth(infoUtil.formatIntegerDuration(endTimestamp, Locale.US))
                     }
 
+                    toTextInput.editText!!.setTextAndRecalculateWidth(toTextInput.editText!!.text.toString())
+
                     rangeSlider.setValues(startValue, endValue)
-                    okBtn.isEnabled = startValue != 0F && endValue != 100F
+                    okBtn.isEnabled = startValue != 0F || endValue != 100F
                     try {
-                        player.seekTo(startSeconds.toLong() * 1000)
+                        player.seekTo((seconds.toLong() - 4L) * 1000)
                         player.play()
                     }catch (ignored: Exception) {}
 
@@ -370,6 +385,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
 
         okBtn.isEnabled = false
         okBtn.setOnClickListener {
+            forceKeyframes.isVisible = true
             val chip = createChip("${fromTextInput.editText!!.text}-${toTextInput.editText!!.text}")
             chip.performClick()
             cutSection.visibility = View.GONE
@@ -377,6 +393,26 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
         }
 
         populateSuggestedChapters()
+    }
+
+    private fun updateFromSlider(){
+        val values = rangeSlider.values
+        val startTimestamp = (values[0].toInt() * timeSeconds) / 100
+        val endTimestamp = (values[1].toInt() * timeSeconds) / 100
+
+        val startTimestampString = infoUtil.formatIntegerDuration(startTimestamp, Locale.US)
+        val endTimestampString = infoUtil.formatIntegerDuration(endTimestamp, Locale.US)
+
+        fromTextInput.editText!!.setTextAndRecalculateWidth(startTimestampString)
+        toTextInput.editText!!.setTextAndRecalculateWidth(endTimestampString)
+
+
+        okBtn.isEnabled = values[0] != 0F || values[1] != 100F
+
+        try {
+            player.seekTo((startTimestamp * 1000).toLong())
+            player.play()
+        }catch (ignored: Exception) {}
     }
 
     private fun populateSuggestedChapters(){
@@ -391,6 +427,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                 chip.isCheckedIconVisible = false
                 suggestedChips.addView(chip)
                 chip.setOnClickListener { c ->
+                    forceKeyframes.isVisible = true
                     val createdChip = createChapterChip(it, null)
                     createdChip.performClick()
                     cutSection.visibility = View.GONE
@@ -424,6 +461,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
         }
 
         if (item.downloadSections.isNotBlank()){
+            forceKeyframes.isVisible = true
             chipGroup.removeAllViews()
             item.downloadSections.split(";").forEachIndexed { _, it ->
                 if (it.isBlank()) return
@@ -461,10 +499,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
         }
 
         chip.setOnLongClickListener {
-            val deleteDialog = MaterialAlertDialogBuilder(requireContext())
-            deleteDialog.setTitle(getString(R.string.you_are_going_to_delete) + " \"" + chip.text + "\"!")
-            deleteDialog.setNegativeButton(getString(R.string.cancel)) { dialogInterface: DialogInterface, _: Int -> dialogInterface.cancel() }
-            deleteDialog.setPositiveButton(getString(R.string.ok)) { _: DialogInterface?, _: Int ->
+            UiUtil.showGenericDeleteDialog(requireContext(), chip.text.toString(), accepted = {
                 player.seekTo(0)
                 player.pause()
                 chipGroup.removeView(chip)
@@ -474,8 +509,7 @@ class CutVideoBottomSheetDialog(private val item: DownloadItem, private val urls
                     player.stop()
                     dismiss()
                 }
-            }
-            deleteDialog.show()
+            })
             true
         }
 

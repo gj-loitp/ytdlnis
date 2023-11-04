@@ -7,6 +7,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/use_header"
+        android:title="@string/user_agent_header"
+        android:checkable="true"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/import_clipboard"
         android:title="@string/import_from_clipboard"
         app:showAsAction="never" />
@@ -14,5 +20,10 @@
     <item
         android:id="@+id/export_clipboard"
         android:title="@string/export_from_clipboard"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/export_file"
+        android:title="@string/export_file"
         app:showAsAction="never" />
 </menu>

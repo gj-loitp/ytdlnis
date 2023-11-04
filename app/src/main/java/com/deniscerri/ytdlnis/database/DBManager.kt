@@ -7,8 +7,18 @@ import com.deniscerri.ytdlnis.database.models.*
 
 @TypeConverters(Converters::class)
 @Database(
-    entities = [ResultItem::class, HistoryItem::class, DownloadItem::class, CommandTemplate::class, SearchHistoryItem::class, TemplateShortcut::class, CookieItem::class, LogItem::class],
-    version = 9,
+    entities = [
+        ResultItem::class,
+        HistoryItem::class,
+        DownloadItem::class,
+        CommandTemplate::class,
+        SearchHistoryItem::class,
+        TemplateShortcut::class,
+        CookieItem::class,
+        LogItem::class,
+        TerminalItem::class
+   ],
+    version = 11,
     autoMigrations = [
         AutoMigration (from = 1, to = 2),
         AutoMigration (from = 2, to = 3),
@@ -17,7 +27,9 @@ import com.deniscerri.ytdlnis.database.models.*
         AutoMigration (from = 5, to = 6),
         AutoMigration (from = 6, to = 7),
         AutoMigration (from = 7, to = 8),
-        AutoMigration (from = 8, to = 9)
+        AutoMigration (from = 8, to = 9),
+        AutoMigration (from = 9, to = 10),
+        AutoMigration (from = 10, to = 11)
     ]
 )
 abstract class DBManager : RoomDatabase(){
@@ -28,6 +40,11 @@ abstract class DBManager : RoomDatabase(){
     abstract val searchHistoryDao: SearchHistoryDao
     abstract val cookieDao: CookieDao
     abstract val logDao: LogDao
+    abstract val terminalDao: TerminalDao
+
+    enum class SORTING{
+        DESC, ASC
+    }
 
     companion object {
         //prevents multiple instances of db getting created at the same time

@@ -2,6 +2,7 @@ package com.deniscerri.ytdlnis.ui.more.settings
 
 import android.app.Activity
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build.VERSION
 import android.os.Bundle
@@ -17,6 +18,7 @@ import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.util.FileUtil
+import com.deniscerri.ytdlnis.util.UiUtil
 import com.deniscerri.ytdlnis.work.MoveCacheFilesWorker
 import com.google.android.material.snackbar.Snackbar
 import java.io.File
@@ -29,23 +31,27 @@ class FolderSettingsFragment : BaseSettingsFragment() {
     private var videoPath: Preference? = null
     private var commandPath: Preference? = null
     private var accessAllFiles : Preference? = null
-    private var audioFilenameTemplate : EditTextPreference? = null
-    private var videoFilenameTemplate : EditTextPreference? = null
+    private var cacheDownloads : Preference? = null
+    private var audioFilenameTemplate : Preference? = null
+    private var videoFilenameTemplate : Preference? = null
     private var clearCache: Preference? = null
     private var moveCache: Preference? = null
+    private lateinit var preferences: SharedPreferences
+    private lateinit var editor: SharedPreferences.Editor
 
     private var activeDownloadCount = 0
 
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.folders_preference, rootKey)
 
-        val preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
-        val editor = preferences.edit()
+        preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        editor = preferences.edit()
 
         musicPath = findPreference("music_path")
         videoPath = findPreference("video_path")
         commandPath = findPreference("command_path")
         accessAllFiles = findPreference("access_all_files")
+        cacheDownloads = findPreference("cache_downloads")
         videoFilenameTemplate = findPreference("file_name_template")
         audioFilenameTemplate = findPreference("file_name_template_audio")
         clearCache = findPreference("clear_cache")
@@ -64,6 +70,10 @@ class FolderSettingsFragment : BaseSettingsFragment() {
         if((VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()) ||
             VERSION.SDK_INT < 30) {
             accessAllFiles!!.isVisible = false
+            cacheDownloads!!.isEnabled = true
+        }else{
+            editor.putBoolean("cache_downloads", true).apply()
+            cacheDownloads!!.isEnabled = false
         }
 
         editor.apply()
@@ -108,19 +118,34 @@ class FolderSettingsFragment : BaseSettingsFragment() {
             }
 
         videoFilenameTemplate?.title = "${getString(R.string.file_name_template)} [${getString(R.string.video)}]"
-        videoFilenameTemplate?.dialogTitle = "${getString(R.string.file_name_template)} [${getString(R.string.video)}]"
-
+        videoFilenameTemplate?.summary = preferences.getString("file_name_template", "%(uploader)s - %(title)s")
         audioFilenameTemplate?.title = "${getString(R.string.file_name_template)} [${getString(R.string.audio)}]"
-        audioFilenameTemplate?.dialogTitle = "${getString(R.string.file_name_template)} [${getString(R.string.audio)}]"
+        audioFilenameTemplate?.summary = preferences.getString("file_name_template_audio", "%(uploader)s - %(title)s")
 
-        var cacheSize = File(requireContext().cacheDir.absolutePath + "/downloads").walkBottomUp().fold(0L) { acc, file -> acc + file.length() }
+        videoFilenameTemplate?.setOnPreferenceClickListener {
+            UiUtil.showFilenameTemplateDialog(requireActivity(), videoFilenameTemplate?.summary.toString() ?: "", "${getString(R.string.file_name_template)} [${getString(R.string.video)}]") {
+                editor.putString("file_name_template", it).apply()
+                videoFilenameTemplate?.summary = it
+            }
+            false
+        }
+
+        audioFilenameTemplate?.setOnPreferenceClickListener {
+            UiUtil.showFilenameTemplateDialog(requireActivity(), audioFilenameTemplate?.summary.toString() ?: "", "${getString(R.string.file_name_template)} [${getString(R.string.audio)}]") {
+                editor.putString("file_name_template_audio", it).apply()
+                audioFilenameTemplate?.summary = it
+            }
+            false
+        }
+
+        var cacheSize = File(FileUtil.getCachePath(requireContext())).walkBottomUp().fold(0L) { acc, file -> acc + file.length() }
         clearCache!!.summary = "(${FileUtil.convertFileSize(cacheSize)}) ${resources.getString(R.string.clear_temporary_files_summary)}"
         clearCache!!.onPreferenceClickListener =
             Preference.OnPreferenceClickListener {
                 if (activeDownloadCount == 0){
-                    File(requireContext().cacheDir.absolutePath + "/downloads").deleteRecursively()
+                    File(FileUtil.getCachePath(requireContext())).deleteRecursively()
                     Snackbar.make(requireView(), getString(R.string.cache_cleared), Snackbar.LENGTH_SHORT).show()
-                    cacheSize = File(requireContext().cacheDir.absolutePath + "/downloads").walkBottomUp().fold(0L) { acc, file -> acc + file.length() }
+                    cacheSize = File(FileUtil.getCachePath(requireContext())).walkBottomUp().fold(0L) { acc, file -> acc + file.length() }
                     clearCache!!.summary = "(${FileUtil.convertFileSize(cacheSize)}) ${resources.getString(R.string.clear_temporary_files_summary)}"
                 }else{
                     Snackbar.make(requireView(), getString(R.string.downloads_running_try_later), Snackbar.LENGTH_SHORT).show()
@@ -156,6 +181,18 @@ class FolderSettingsFragment : BaseSettingsFragment() {
             }
 
 
+    }
+
+    override fun onResume() {
+        if((VERSION.SDK_INT >= 30 && Environment.isExternalStorageManager()) ||
+            VERSION.SDK_INT < 30) {
+            accessAllFiles!!.isVisible = false
+            cacheDownloads!!.isEnabled = true
+        }else{
+            editor.putBoolean("cache_downloads", true).apply()
+            cacheDownloads!!.isEnabled = false
+        }
+        super.onResume()
     }
 
     private var musicPathResultLauncher = registerForActivityResult(

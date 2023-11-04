@@ -12,56 +12,55 @@ import android.graphics.drawable.ColorDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
 import android.provider.Settings
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowInsets
 import android.widget.CheckBox
 import android.widget.TextView
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.forEach
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
-import androidx.core.view.updatePadding
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavController
-import androidx.navigation.NavDirections
-import androidx.navigation.fragment.FragmentNavigatorExtras
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.fragment.findNavController
-import androidx.navigation.navOptions
 import androidx.navigation.ui.setupWithNavController
 import androidx.preference.PreferenceManager
+import com.deniscerri.ytdlnis.database.DBManager
 import com.deniscerri.ytdlnis.database.repository.DownloadRepository
 import com.deniscerri.ytdlnis.database.viewmodel.CookieViewModel
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.database.viewmodel.ResultViewModel
 import com.deniscerri.ytdlnis.ui.BaseActivity
 import com.deniscerri.ytdlnis.ui.HomeFragment
+import com.deniscerri.ytdlnis.ui.downloadcard.DownloadBottomSheetDialog
 import com.deniscerri.ytdlnis.ui.more.settings.SettingsActivity
+import com.deniscerri.ytdlnis.util.FileUtil
 import com.deniscerri.ytdlnis.util.ThemeUtil
 import com.deniscerri.ytdlnis.util.UpdateUtil
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.elevation.SurfaceColors
 import com.google.android.material.navigation.NavigationBarView
 import com.google.android.material.navigation.NavigationView
 import com.google.android.material.navigationrail.NavigationRailView
+import com.google.android.material.snackbar.Snackbar
+import com.yausername.youtubedl_android.YoutubeDL
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import java.io.BufferedReader
+import java.io.File
 import java.io.InputStreamReader
 import java.io.Reader
 import java.nio.charset.Charset
@@ -79,7 +78,6 @@ class MainActivity : BaseActivity() {
     private lateinit var navigationView: View
     private lateinit var navHostFragment : NavHostFragment
     private lateinit var navController : NavController
-    private lateinit var sharedPreferences: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,9 +89,7 @@ class MainActivity : BaseActivity() {
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
         preferences = PreferenceManager.getDefaultSharedPreferences(context)
 
-        if (preferences.getBoolean("incognito", false)){
-            resultViewModel.deleteAll()
-        }
+        if (preferences.getBoolean("incognito", false)) resultViewModel.deleteAll()
 
         askPermissions()
         checkUpdate()
@@ -118,16 +114,16 @@ class MainActivity : BaseActivity() {
             }
         }
 
-        sharedPreferences =  PreferenceManager.getDefaultSharedPreferences(this)
+        if (savedInstanceState == null){
+            val graph = navController.navInflater.inflate(R.navigation.nav_graph)
+            graph.setStartDestination(R.id.homeFragment)
+            when(preferences.getString("start_destination", "")) {
+                "History" -> graph.setStartDestination(R.id.historyFragment)
+                "More" -> if (navigationView is NavigationBarView) graph.setStartDestination(R.id.moreFragment)
+            }
 
-//        val graph = navController.navInflater.inflate(R.navigation.nav_graph)
-//        graph.setStartDestination(R.id.homeFragment)
-//        when(sharedPreferences.getString("start_destination", "")) {
-//            "History" -> graph.setStartDestination(R.id.historyFragment)
-//            "More" -> if (navigationView is NavigationBarView) graph.setStartDestination(R.id.moreFragment)
-//        }
-//
-//        navController.graph = graph
+            navController.graph = graph
+        }
 
         if (navigationView is NavigationBarView){
             (navigationView as NavigationBarView).setupWithNavController(navController)
@@ -157,13 +153,12 @@ class MainActivity : BaseActivity() {
                     activeDownloadsBadge.number = it
                 }
             }
-            window.navigationBarColor = SurfaceColors.SURFACE_2.getColor(this)
         }
         if (navigationView is NavigationView){
             (navigationView as NavigationView).setupWithNavController(navController)
             //terminate button
             (navigationView as NavigationView).menu.getItem(7).setOnMenuItemClickListener {
-                if (sharedPreferences.getBoolean("ask_terminate_app", true)){
+                if (preferences.getBoolean("ask_terminate_app", true)){
                     var doNotShowAgain = false
                     val terminateDialog = MaterialAlertDialogBuilder(this)
                     terminateDialog.setTitle(getString(R.string.confirm_delete_history))
@@ -187,7 +182,7 @@ class MainActivity : BaseActivity() {
                             runBlocking {
                                 job.join()
                                 if (doNotShowAgain){
-                                    sharedPreferences.edit().putBoolean("ask_terminate_app", false).apply()
+                                    preferences.edit().putBoolean("ask_terminate_app", false).apply()
                                 }
                                 finishAndRemoveTask()
                                 finishAffinity()
@@ -202,12 +197,15 @@ class MainActivity : BaseActivity() {
                 }
                 true
             }
+            //settings button
+            (navigationView as NavigationView).menu.getItem(8).setOnMenuItemClickListener {
+                val intent = Intent(context, SettingsActivity::class.java)
+                startActivity(intent)
+                true
+            }
 
             (navigationView as NavigationView).getHeaderView(0).findViewById<TextView>(R.id.title).text = ThemeUtil.getStyledAppName(this)
         }
-        cookieViewModel.updateCookiesFile()
-        val intent = intent
-        handleIntents(intent)
 
         navController.addOnDestinationChangedListener { _, destination, _ ->
             if (navigationView is NavigationBarView){
@@ -226,13 +224,29 @@ class MainActivity : BaseActivity() {
             }
         }
 
+        when(preferences.getString("start_destination", "")) {
+            "Queue" -> if (savedInstanceState == null) navController.navigate(R.id.downloadQueueMainFragment)
+        }
 
-        when(sharedPreferences.getString("start_destination", "")) {
-            "Queue" -> navController.navigate(R.id.downloadQueueMainFragment)
+        cookieViewModel.updateCookiesFile()
+        val intent = intent
+        handleIntents(intent)
+
+        if (preferences.getBoolean("auto_update_ytdlp", false)){
+            CoroutineScope(SupervisorJob()).launch(Dispatchers.IO) {
+                if(DBManager.getInstance(this@MainActivity).downloadDao.getDownloadsCountByStatus(listOf("Active", "Queued")) == 0){
+                    if (UpdateUtil(this@MainActivity).updateYoutubeDL() == YoutubeDL.UpdateStatus.DONE) {
+                        val version = YoutubeDL.getInstance().version(context)
+                        Snackbar.make(findViewById(android.R.id.content),
+                            this@MainActivity.getString(R.string.ytld_update_success) + " [${version}]",
+                            Snackbar.LENGTH_LONG).show()
+                    }
+                }
+
+            }
         }
 
     }
-
     override fun onSaveInstanceState(savedInstanceState: Bundle) {
         super.onSaveInstanceState(savedInstanceState)
         savedInstanceState.putBundle("nav_state", navController.saveState())
@@ -341,26 +355,37 @@ class MainActivity : BaseActivity() {
                 }else{
                     intent.getParcelableExtra(Intent.EXTRA_STREAM)
                 }
-                val `is` = contentResolver.openInputStream(uri!!)
-                val textBuilder = StringBuilder()
-                val reader: Reader = BufferedReader(
-                    InputStreamReader(
-                        `is`, Charset.forName(
-                            StandardCharsets.UTF_8.name()
+
+                if (preferences.getString("preferred_download_type", "video") == "command"){
+                    val f = File(FileUtil.formatPath(uri?.path ?: ""))
+                    if (!f.exists()){
+                        Toast.makeText(context, "Couldn't read file", Toast.LENGTH_LONG).show()
+                        return
+                    }
+                    val bottomSheet = DownloadBottomSheetDialog(type = DownloadViewModel.Type.command, result = downloadViewModel.createEmptyResultItem(f.absolutePath))
+                    bottomSheet.show(supportFragmentManager, "downloadSingleSheet")
+                }else{
+                    val `is` = contentResolver.openInputStream(uri!!)
+                    val textBuilder = StringBuilder()
+                    val reader: Reader = BufferedReader(
+                        InputStreamReader(
+                            `is`, Charset.forName(
+                                StandardCharsets.UTF_8.name()
+                            )
                         )
                     )
-                )
-                var c: Int
-                while (reader.read().also { c = it } != -1) {
-                    textBuilder.append(c.toChar())
+                    var c: Int
+                    while (reader.read().also { c = it } != -1) {
+                        textBuilder.append(c.toChar())
+                    }
+                    val bundle = Bundle()
+                    bundle.putString("url", textBuilder.toString())
+                    navController.popBackStack(R.id.homeFragment, true)
+                    navController.navigate(
+                        R.id.homeFragment,
+                        bundle
+                    )
                 }
-                val bundle = Bundle()
-                bundle.putString("url", textBuilder.toString())
-                navController.popBackStack(R.id.homeFragment, true)
-                navController.navigate(
-                    R.id.homeFragment,
-                    bundle
-                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -371,7 +396,7 @@ class MainActivity : BaseActivity() {
     private fun checkUpdate() {
         if (preferences.getBoolean("update_app", false)) {
             val updateUtil = UpdateUtil(this)
-            lifecycleScope.launch(Dispatchers.IO){
+            CoroutineScope(Dispatchers.IO).launch{
                 updateUtil.updateApp{}
             }
         }
@@ -457,10 +482,6 @@ class MainActivity : BaseActivity() {
             exitProcess(0)
         }
         dialog.show()
-    }
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        startActivity(Intent(this, MainActivity::class.java))
-        super.onConfigurationChanged(newConfig)
     }
 
     companion object {

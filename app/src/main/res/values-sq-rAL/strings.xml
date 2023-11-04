@@ -161,7 +161,6 @@
     <string name="items_imported">Elementë të importuar</string>
     <string name="help_translate">Ndihmo në përkthim</string>
     <string name="help_translate_summary">Përkthe këtë aplikacion në gjuhën tuaj duke përdorur Weblate</string>
-    <string name="workmanager_updated">Duhet të rinisni aplikacionin dhe të mos keni shkarkime aktive që kjo preferencë të hyjë në fuqi!</string>
     <string name="restart">Rinis</string>
     <string name="file_size">Madhësia e skedarit</string>
     <string name="clear_temporary_files">Pastro skedarët e perkohshëm</string>
@@ -231,7 +230,7 @@
     <string name="finished_download_notification_channel_name">Shkarkimet e Përfunduara</string>
     <string name="finished_download_notification_channel_description">Njoftimet për shkarkimet e mbaruar ose me probleme</string>
     <string name="quick_download">Shkarkim i Shpejtë</string>
-    <string name="quick_download_summary">Mos merr informacion përpara shkarkimit</string>
+    <string name="quick_download_summary">Mos merr informacion te karta e shkarkimit</string>
     <string name="preferred_format_id">ID e Formatit të Preferuar</string>
     <string name="download_already_exists">Sharkimi ekziston tashmë</string>
     <string name="remove_audio">Hiq Audion</string>
@@ -261,7 +260,6 @@
     <string name="preferred_format_id_summary">Zgjidhni formatin me këtë ID në kartën e shkarkimit</string>
     <string name="misc">Të Tjera</string>
     <string name="audio_only_item">Ky artikull përmban vetëm formate audio</string>
-    <string name="locale">Lokal</string>
     <string name="general">Të Përgjithshme</string>
     <string name="swipe_gestures">Gjestet e rrëshqitjes</string>
     <string name="swipe_gestures_summary">Rrëshqitni artikujt për veprime të caktuara</string>
@@ -269,7 +267,6 @@
     <string name="crop_thumb_summary">Preje thumbnailin në formë katrore për shkarkimet audio</string>
     <string name="move_temporary_files">Zhvendos skedarët e përkohshëm</string>
     <string name="move_temporary_files_summary">Transfero skedarët e përkohshëm në dosjen e shkarkimeve</string>
-    <string name="format_filtering_hint_2">Të gjithë artikujt duhet të jenë audio ose video për të përdorur këtë opsion</string>
     <string name="custom_audio_quality">Përdor cilësinë e personalizuar të audios</string>
     <string name="piped_instance">Instanca e PIPED</string>
     <string name="piped_instance_summary">Shkruani një Server API PIPED, aplikacioni mund të përdorë për kërkimet dhe formatet në youtube</string>
@@ -278,8 +275,7 @@
     <string name="format_order">Renditja e formatit</string>
     <string name="hide_thumbnails">Fshehi Thumbnailet</string>
     <string name="force_keyframes_summary">Proçes më i ngadaltë, por prerje më të sakta</string>
-    <string name="subtitle_format">Formati i titrave
-\n</string>
+    <string name="subtitle_format">Formati i titrave</string>
     <string name="show_terminal">Shfaq Terminalin në fletën e shpërndarjes</string>
     <string name="saved">Të ruajtura</string>
     <string name="clear_saved">Pastro të ruajturat</string>
@@ -293,5 +289,30 @@
     <string name="extra_command">Komanda Shtesë</string>
     <string name="use_cookies">Përdor Biskotat</string>
     <string name="embed_metadata">Vendos Metadatat</string>
-    <string name="embed_metadata_summary">Vendosni të dhënat meta në skedarin e videos. Përfshin gjithashtu kapitujt/infojson nëse janë të pranishëm</string>
+    <string name="embed_metadata_summary">Vendosni të dhënat meta në skedarin e audios</string>
+    <string name="update_formats_background">Përditëso formatet në Prapaskenë</string>
+    <string name="auto_update_ytdlp">Përditëso yt-dlp Automatikisht</string>
+    <string name="use_sponsorblock">Përdor SponsorBlock</string>
+    <string name="cache_first">Përdor Memorien Kashe për sharkimet në fillim</string>
+    <string name="cache_first_summary">Skedarët shkarkohen në memorien e brendshme dhe më pas transferohet tek direktoria e zgjedhur. Përdoreni këtë kur nuk mund të shkarkosh drejtpërdrejt në direktori</string>
+    <string name="scheduling">Planifikimi</string>
+    <string name="use_scheduler">Shkarko sipas Planifikimit</string>
+    <string name="update_app_beta_summary">Bashkohu programit beta. Mund të ketë probleme.</string>
+    <string name="update_app_beta">Publikimet Beta</string>
+    <string name="auto">Automatike</string>
+    <string name="preferred_audio_codec">Kodeku i Preferuar i Audios</string>
+    <string name="preferred_video_codec">Kodeku i Preferuar i Videos</string>
+    <string name="sponsorblock_api_url">URL e Sponsorblock API</string>
+    <string name="loading">Duke Ngarkuar</string>
+    <string name="user_agent_header">Headeri i User-Agent</string>
+    <string name="search_command_hint">Kërko nga Komandat</string>
+    <string name="remember_download_type">Mbaj mend Llojin e Shkarkimit</string>
+    <string name="remember_download_type_summary">Zgjidh llojin e fundit të shkarkimit për shkarkimin aktual</string>
+    <string name="length">Gjatësia</string>
+    <string name="schedule">Orar</string>
+    <string name="skip">Injoro</string>
+    <string name="license">Liçensa</string>
+    <string name="download_already_exists_summary">Do sërisht ta shkarkosh\?</string>
+    <string name="modify_download_card">Modifiko Kartën e Shkarkimit</string>
+    <string name="security">Siguria</string>
 </resources>

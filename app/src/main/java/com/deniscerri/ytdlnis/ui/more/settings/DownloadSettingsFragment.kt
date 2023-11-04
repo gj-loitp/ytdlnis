@@ -1,67 +1,77 @@
 package com.deniscerri.ytdlnis.ui.more.settings
 
-import android.app.Activity
-import android.content.Context.POWER_SERVICE
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
-import android.os.PowerManager
-import android.provider.Settings
+import androidx.preference.ListPreference
 import androidx.preference.Preference
-import androidx.preference.SeekBarPreference
-import com.deniscerri.ytdlnis.MainActivity
+import androidx.preference.PreferenceManager
+import androidx.preference.SwitchPreferenceCompat
 import com.deniscerri.ytdlnis.R
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.deniscerri.ytdlnis.receiver.AlarmStartReceiver
+import com.deniscerri.ytdlnis.util.UiUtil
+import com.deniscerri.ytdlnis.work.AlarmScheduler
+import java.util.Calendar
 
 
 class DownloadSettingsFragment : BaseSettingsFragment() {
     override val title: Int = R.string.downloads
 
-    private var concurrentDownloads: SeekBarPreference? = null
-    private var ignoreBatteryOptimization: Preference? = null
-
-
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.downloading_preferences, rootKey)
+        val preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
 
-        ignoreBatteryOptimization = findPreference("ignore_battery")
-        val packageName: String = requireContext().packageName
-        val pm = requireContext().applicationContext.getSystemService(POWER_SERVICE) as PowerManager
-        if (pm.isIgnoringBatteryOptimizations(packageName)) {
-            ignoreBatteryOptimization!!.isVisible = false
+        val rememberDownloadType = findPreference<SwitchPreferenceCompat>("remember_download_type")
+        val downloadType = findPreference<ListPreference>("preferred_download_type")
+        downloadType?.isEnabled = rememberDownloadType?.isChecked == false
+        rememberDownloadType?.setOnPreferenceClickListener {
+            downloadType?.isEnabled = !rememberDownloadType.isChecked
+            true
         }
 
-        concurrentDownloads = findPreference("concurrent_downloads")
-        concurrentDownloads!!.onPreferenceChangeListener =
-            Preference.OnPreferenceChangeListener { _: Preference?, _: Any ->
-                MaterialAlertDialogBuilder(requireContext())
-                    .setTitle(resources.getString(R.string.warning))
-                    .setMessage(resources.getString(R.string.workmanager_updated))
-                    .setNegativeButton(resources.getString(R.string.cancel)) { dialog, _ ->
-                        dialog.cancel()
-                    }
-                    .setPositiveButton(resources.getString(R.string.restart)) { _, _ ->
-                        val intent = Intent(context, MainActivity::class.java)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        requireContext().startActivity(intent)
-                        if (context is Activity) {
-                            (context as Activity).finish()
-                        }
-                        Runtime.getRuntime().exit(0)
-                    }
-                    .show()
+        val useScheduler = findPreference<SwitchPreferenceCompat>("use_scheduler")
+        val scheduleStart = findPreference<Preference>("schedule_start")
+        scheduleStart?.summary = preferences.getString("schedule_start", "00:00")
+        val scheduleEnd = findPreference<Preference>("schedule_end")
+        scheduleEnd?.summary = preferences.getString("schedule_end", "05:00")
+        val scheduler = AlarmScheduler(requireContext())
 
-                true
+        useScheduler?.setOnPreferenceChangeListener { preference, newValue ->
+            if (newValue as Boolean){
+                scheduler.schedule()
+            }else{
+                scheduler.cancel()
+                //start worker if there are leftover downloads waiting for scheduler
+                val intent = Intent(context, AlarmStartReceiver::class.java)
+                requireActivity().sendBroadcast(intent)
             }
-        ignoreBatteryOptimization = findPreference("ignore_battery")
-        ignoreBatteryOptimization!!.onPreferenceClickListener =
-            Preference.OnPreferenceClickListener {
-                val intent = Intent()
-                intent.action = Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
-                intent.data = Uri.parse("package:" + requireContext().packageName)
-                startActivity(intent)
-                true
+            true
+        }
+
+        scheduleStart?.setOnPreferenceClickListener {
+            UiUtil.showTimePicker(parentFragmentManager){
+                val hr = it.get(Calendar.HOUR_OF_DAY)
+                val mn = it.get(Calendar.MINUTE)
+                val formattedTime = String.format("%02d", hr) + ":" + String.format("%02d", mn)
+                preferences.edit().putString("schedule_start",formattedTime).apply()
+                scheduleStart.summary = formattedTime
+
+                scheduler.schedule()
             }
+            true
+        }
+
+        scheduleEnd?.setOnPreferenceClickListener {
+            UiUtil.showTimePicker(parentFragmentManager){
+                val hr = it.get(Calendar.HOUR_OF_DAY)
+                val mn = it.get(Calendar.MINUTE)
+                val formattedTime = String.format("%02d", hr) + ":" + String.format("%02d", mn)
+                preferences.edit().putString("schedule_end",formattedTime).apply()
+                scheduleEnd.summary = formattedTime
+
+                scheduler.schedule()
+            }
+            true
+        }
     }
 
 }

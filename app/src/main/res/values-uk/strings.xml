@@ -162,7 +162,6 @@
     <string name="clear_temporary_files_summary">Видалення кешованих файлів зі збійних/помилкових/скасованих завантажень</string>
     <string name="clear_cancelled">Очистити скасоване</string>
     <string name="split_by_chapters">Розподіл за розділами</string>
-    <string name="workmanager_updated">Щоб це налаштування набуло чинності, вам потрібно перезапустити застосунок і не мати активних завантажень!</string>
     <string name="restart">Перезавантажити</string>
     <string name="cache_cleared">Очищено тимчасові файли</string>
     <string name="downloads_running_try_later">Завантажувач працює. Спробуйте ще раз пізніше</string>
@@ -264,11 +263,9 @@
     <string name="swipe_gestures_summary">Увімкнути жести для певних дій</string>
     <string name="crop_thumb">Обрізати мініатюру</string>
     <string name="crop_thumb_summary">Обріжте ескіз у квадрат для завантаження аудіо</string>
-    <string name="locale">Локаль</string>
     <string name="audio_only_item">Цей елемент містить лише аудіоформати</string>
     <string name="move_temporary_files_summary">Перенесіть кешовані файли в папку завантажень</string>
     <string name="move_temporary_files">Перемістити тимчасові файли</string>
-    <string name="format_filtering_hint_2">Щоб скористатися цією опцією, усі елементи мають бути аудіо чи відео</string>
     <string name="custom_audio_quality">Вибір якості аудіо</string>
     <string name="piped_instance">Piped сервер</string>
     <string name="piped_instance_summary">Напишіть сервер Piped API, який програма може використовувати для запитів і форматів YouTube</string>
@@ -283,8 +280,7 @@
     <string name="hide_thumbnails">Приховати мініатюри</string>
     <string name="saved">Збережено</string>
     <string name="clear_saved">Очистити збережене</string>
-    <string name="subtitle_format">Формат субтитрів
-\n</string>
+    <string name="subtitle_format">Формат субтитрів</string>
     <string name="save_for_later">Зберегти завантаження на потім\?</string>
     <string name="orange">Помаранчевий</string>
     <string name="show_terminal">Показати термінал у меню Спільний доступ</string>
@@ -293,5 +289,30 @@
     <string name="write_description_summary">Напишіть файл опису</string>
     <string name="extra_command">Додаткова команда</string>
     <string name="embed_metadata">Вставити метадані</string>
-    <string name="embed_metadata_summary">Вставте метадані у відеофайл. Також вбудовує розділи/infojson, якщо вони присутні</string>
+    <string name="embed_metadata_summary">Вбудовуйте та аналізуйте метадані в аудіофайл</string>
+    <string name="auto_update_ytdlp">Автооновлення yt-dlp</string>
+    <string name="use_sponsorblock">Використання SponsorBlock</string>
+    <string name="update_formats_background">Оновити формати у фоновому режимі</string>
+    <string name="scheduling">Планування</string>
+    <string name="cache_first_summary">Файли кешу завантажуються у внутрішню пам\'ять, а потім переносяться в обрану вами папку. Використовується, коли немає можливості записувати файл безпосередньо в пам\'ять</string>
+    <string name="cache_first">Спочатку завантажується кеш</string>
+    <string name="use_scheduler">Завантажити за розкладом</string>
+    <string name="update_app_beta_summary">Записатися в бета-програму. Може містити помилки.</string>
+    <string name="update_app_beta">Бета релізи</string>
+    <string name="auto">Авто</string>
+    <string name="preferred_audio_codec">Бажаний аудіокодек</string>
+    <string name="preferred_video_codec">Бажаний відеокодек</string>
+    <string name="sponsorblock_api_url">Sponsorblock API URL</string>
+    <string name="loading">Завантаження</string>
+    <string name="schedule">Розклад</string>
+    <string name="user_agent_header">Заголовок User-Agent</string>
+    <string name="search_command_hint">Пошук з команд</string>
+    <string name="skip">Пропустити</string>
+    <string name="license">Ліцензія</string>
+    <string name="download_already_exists_summary">Ви все ще хочете завантажити\?</string>
+    <string name="modify_download_card">Змінити картку завантаження</string>
+    <string name="security">Безпека</string>
+    <string name="remember_download_type">Запам\'ятати тип завантаження</string>
+    <string name="remember_download_type_summary">Виберіть останній відкритий тип завантаження для поточного елемента</string>
+    <string name="length">Довжина</string>
 </resources>

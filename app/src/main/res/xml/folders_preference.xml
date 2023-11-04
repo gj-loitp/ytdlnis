@@ -3,16 +3,19 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <Preference
+        android:defaultValue=""
         app:icon="@drawable/ic_music_downloaded"
         app:key="music_path"
         app:title="@string/music_directory" />
 
     <Preference
+        android:defaultValue=""
         app:icon="@drawable/ic_video_downloaded"
         app:key="video_path"
         app:title="@string/video_directory" />
 
     <Preference
+        android:defaultValue=""
         app:icon="@drawable/ic_terminal"
         app:key="command_path"
         app:title="@string/command_directory" />
@@ -23,15 +26,34 @@
         android:summary="@string/access_all_directories_summary"
         app:title="@string/access_all_directories" />
 
+    <SwitchPreferenceCompat
+        android:widgetLayout="@layout/preferece_material_switch"
+        app:defaultValue="true"
+        app:icon="@drawable/if_file_rename"
+        android:enabled="false"
+        app:key="cache_downloads"
+        app:summary="@string/cache_first_summary"
+        app:title="@string/cache_first" />
 
-    <EditTextPreference
+
+    <SwitchPreferenceCompat
+        android:widgetLayout="@layout/preferece_material_switch"
+        app:defaultValue="false"
+        android:icon="@drawable/baseline_save_24"
+        android:key="keep_cache"
+        app:summary="@string/keep_cache_summary"
+        app:title="@string/keep_cache" />
+
+
+
+    <Preference
         android:icon="@drawable/ic_textformat"
         app:key="file_name_template"
         app:useSimpleSummaryProvider="true"
         app:defaultValue="%(uploader)s - %(title)s"
         app:title="@string/file_name_template" />
 
-    <EditTextPreference
+    <Preference
         android:icon="@drawable/ic_textformat"
         app:key="file_name_template_audio"
         app:useSimpleSummaryProvider="true"
@@ -57,13 +79,5 @@
         app:key="clear_cache"
         android:summary="@string/clear_temporary_files_summary"
         app:title="@string/clear_temporary_files" />
-
-    <SwitchPreferenceCompat
-        android:widgetLayout="@layout/preferece_material_switch"
-        app:defaultValue="false"
-        android:icon="@drawable/baseline_save_24"
-        android:key="keep_cache"
-        app:summary="@string/keep_cache_summary"
-        app:title="@string/keep_cache" />
 
 </PreferenceScreen>

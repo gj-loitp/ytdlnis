@@ -46,7 +46,6 @@
                     </HorizontalScrollView>
 
                     <View
-                        android:id="@+id/divider"
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
                         style="@style/Divider.Vertical"/>
@@ -133,14 +132,8 @@
             android:orientation="vertical"
             android:layout_height="wrap_content"
             android:scrollbars="none"
-
             android:clipToPadding="false"
             android:paddingBottom="100dp"
-            app:fastScrollEnabled="true"
-            app:fastScrollHorizontalThumbDrawable="@drawable/thumb_drawable"
-            app:fastScrollHorizontalTrackDrawable="@drawable/line_drawable"
-            app:fastScrollVerticalThumbDrawable="@drawable/thumb_drawable"
-            app:fastScrollVerticalTrackDrawable="@drawable/line_drawable"
 
             app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
             />

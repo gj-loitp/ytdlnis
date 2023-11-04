@@ -4,7 +4,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="com.deniscerri.ytdlnis.ui.more.TerminalActivity">
+    tools:context="com.deniscerri.ytdlnis.ui.more.terminal.TerminalActivity">
 
     <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
@@ -66,7 +66,7 @@
     </RelativeLayout>
 
 
-    <include layout="@layout/history_no_results"
+    <include layout="@layout/no_results"
         android:visibility="gone" />
 
 

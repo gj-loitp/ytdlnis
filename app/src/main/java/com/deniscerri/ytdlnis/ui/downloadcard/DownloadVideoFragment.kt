@@ -2,35 +2,27 @@ package com.deniscerri.ytdlnis.ui.downloadcard
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.content.Context
-import android.content.DialogInterface
 import android.content.Intent
-import android.icu.text.IDNA.Info
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
-import android.util.DisplayMetrics
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
-import android.view.inputmethod.InputMethodManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
-import android.widget.Button
-import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.widget.addTextChangedListener
-import androidx.core.widget.doOnTextChanged
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.PreferenceManager
+import com.afollestad.materialdialogs.utils.MDUtil.getStringArray
 import com.deniscerri.ytdlnis.R
 import com.deniscerri.ytdlnis.database.models.DownloadItem
 import com.deniscerri.ytdlnis.database.models.Format
@@ -38,15 +30,14 @@ import com.deniscerri.ytdlnis.database.models.ResultItem
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel.Type
 import com.deniscerri.ytdlnis.database.viewmodel.ResultViewModel
-import com.deniscerri.ytdlnis.databinding.FragmentHomeBinding
 import com.deniscerri.ytdlnis.util.FileUtil
 import com.deniscerri.ytdlnis.util.InfoUtil
 import com.deniscerri.ytdlnis.util.UiUtil
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.card.MaterialCardView
-import com.google.android.material.chip.Chip
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputLayout
+import com.google.android.material.textfield.TextInputLayout.END_ICON_CUSTOM
+import com.google.android.material.textfield.TextInputLayout.END_ICON_NONE
+import com.google.android.material.textfield.TextInputLayout.EndIconMode
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -54,32 +45,36 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 
-class DownloadVideoFragment(private val resultItem: ResultItem, private var currentDownloadItem: DownloadItem?) : Fragment() {
-    private var _binding : FragmentHomeBinding? = null
+class DownloadVideoFragment(private var resultItem: ResultItem? = null, private var currentDownloadItem: DownloadItem? = null, private var url: String = "") : Fragment(), GUISync {
     private var fragmentView: View? = null
     private var activity: Activity? = null
     private lateinit var downloadViewModel : DownloadViewModel
     private lateinit var resultViewModel: ResultViewModel
-
-    private lateinit var title : TextInputLayout
-    private lateinit var author : TextInputLayout
+    private lateinit var preferences: SharedPreferences
+    private lateinit var shownFields: List<String>
+    lateinit var title : TextInputLayout
+    lateinit var author : TextInputLayout
     private lateinit var saveDir : TextInputLayout
     private lateinit var freeSpace : TextView
     private lateinit var infoUtil: InfoUtil
+    private lateinit var genericVideoFormats: MutableList<Format>
 
     lateinit var downloadItem: DownloadItem
+
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        _binding = FragmentHomeBinding.inflate(inflater, container, false)
         fragmentView = inflater.inflate(R.layout.fragment_download_video, container, false)
         activity = getActivity()
         downloadViewModel = ViewModelProvider(this)[DownloadViewModel::class.java]
         resultViewModel = ViewModelProvider(this@DownloadVideoFragment)[ResultViewModel::class.java]
         infoUtil = InfoUtil(requireContext())
+        genericVideoFormats = infoUtil.getGenericVideoFormats(requireContext().resources)
+        preferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
+        shownFields = preferences.getStringSet("modify_download_card", setOf())!!.toList().ifEmpty { requireContext().getStringArray(R.array.modify_download_card_values).toList() }
         return fragmentView
     }
 
@@ -93,14 +88,18 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                     val string = Gson().toJson(currentDownloadItem, DownloadItem::class.java)
                     Gson().fromJson(string, DownloadItem::class.java)
                 }else{
-                    downloadViewModel.createDownloadItemFromResult(resultItem, Type.video)
+                    downloadViewModel.createDownloadItemFromResult(resultItem, url, Type.video)
                 }
             }
 
             val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(requireContext())
             try {
                 title = view.findViewById(R.id.title_textinput)
-                title.editText!!.setText(downloadItem.title)
+                title.visibility = if (shownFields.contains("title")) View.VISIBLE else View.GONE
+                if (title.editText?.text?.isEmpty() == true){
+                    title.editText!!.setText(downloadItem.title)
+                    title.endIconMode = END_ICON_NONE
+                }
                 title.editText!!.addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
                     override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
@@ -110,7 +109,11 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                 })
 
                 author = view.findViewById(R.id.author_textinput)
-                author.editText!!.setText(downloadItem.author)
+                author.visibility = if (shownFields.contains("author")) View.VISIBLE else View.GONE
+                if (author.editText?.text?.isEmpty() == true){
+                    author.editText!!.setText(downloadItem.author)
+                    author.endIconMode = END_ICON_NONE
+                }
                 author.editText!!.addTextChangedListener(object : TextWatcher {
                     override fun beforeTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
                     override fun onTextChanged(p0: CharSequence?, p1: Int, p2: Int, p3: Int) {}
@@ -118,6 +121,34 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                         downloadItem.author = p0.toString()
                     }
                 })
+
+                if (savedInstanceState?.containsKey("updated") == true){
+                    if (!listOf(resultItem?.title, downloadItem.title).contains(title.editText?.text.toString())){
+                        title.endIconMode = END_ICON_CUSTOM
+                        title.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                        downloadItem.title = title.editText?.text.toString()
+                    }
+
+                    if (!listOf(resultItem?.author, downloadItem.author).contains(author.editText?.text.toString())){
+                        author.endIconMode = END_ICON_CUSTOM
+                        author.endIconDrawable = AppCompatResources.getDrawable(requireContext(), R.drawable.ic_refresh)
+                        downloadItem.author = author.editText?.text.toString()
+                    }
+                }
+
+                title.setEndIconOnClickListener {
+                    if (resultItem != null){
+                        title.editText?.setText(resultItem?.title)
+                    }
+                    title.endIconMode = END_ICON_NONE
+                }
+
+                author.setEndIconOnClickListener {
+                    if (resultItem != null){
+                        author.editText?.setText(resultItem?.author)
+                    }
+                    author.endIconMode = END_ICON_NONE
+                }
 
                 saveDir = view.findViewById(R.id.outputPath)
                 saveDir.editText!!.setText(
@@ -130,7 +161,7 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                     intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
-                    videoPathResultLauncher.launch(intent)
+                    pathResultLauncher.launch(intent)
                 }
 
                 freeSpace = view.findViewById(R.id.freespace)
@@ -142,17 +173,20 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
 
                 var formats = mutableListOf<Format>()
                 if (currentDownloadItem == null) {
-                    formats.addAll(resultItem.formats)
+                    formats.addAll(resultItem?.formats ?: listOf())
                 }else{
                     //if its updating a present downloaditem and its the wrong category
                     if (currentDownloadItem!!.type != Type.video){
                         downloadItem.type = Type.video
                         runCatching {
-                            downloadItem.format =
-                                downloadItem.allFormats.filter { it.vcodec.isNotEmpty() }
-                                    .maxByOrNull { it.filesize }!!
+                            downloadItem.format = downloadViewModel.getFormat(downloadItem.allFormats, Type.video)
+                            if (downloadItem.videoPreferences.audioFormatIDs.isEmpty()){
+                                downloadItem.videoPreferences.audioFormatIDs.add(
+                                    downloadViewModel.getFormat(downloadItem.allFormats, Type.audio).format_id
+                                )
+                            }
                         }.onFailure {
-                            downloadItem.format = downloadViewModel.getGenericVideoFormats().last()
+                            downloadItem.format = genericVideoFormats.last()
                         }
                     }
                 }
@@ -160,12 +194,13 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
 
                 val containers = requireContext().resources.getStringArray(R.array.video_containers)
                 val container = view.findViewById<TextInputLayout>(R.id.downloadContainer)
+                container.visibility = if (shownFields.contains("container")) View.VISIBLE else View.GONE
                 val containerAutoCompleteTextView =
                     view.findViewById<AutoCompleteTextView>(R.id.container_textview)
                 var containerPreference = sharedPreferences.getString("video_format", "Default")
                 if (containerPreference == "Default") containerPreference = getString(R.string.defaultValue)
 
-                if (formats.isEmpty()) formats = downloadViewModel.getGenericVideoFormats()
+                if (formats.isEmpty()) formats = genericVideoFormats
 
                 val formatCard = view.findViewById<MaterialCardView>(R.id.format_card_constraintLayout)
 
@@ -174,22 +209,30 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                 val listener = object : OnFormatClickListener {
                     override fun onFormatClick(allFormats: List<List<Format>>, item: List<FormatTuple>) {
                         downloadItem.format = item.first().format
-                        item.first().audioFormats?.map { it.format_id }
-                            ?.let { downloadItem.videoPreferences.audioFormatIDs.addAll(it) }
+                        item.first().audioFormats?.map { it.format_id }?.let {
+                            downloadItem.videoPreferences.audioFormatIDs.clear()
+                            downloadItem.videoPreferences.audioFormatIDs.addAll(it)
+                        }
                         lifecycleScope.launch {
                             withContext(Dispatchers.IO){
-                                resultItem.formats.removeAll(formats.toSet())
-                                resultItem.formats.addAll(allFormats.first())
-                                resultViewModel.update(resultItem)
+                                resultItem?.formats?.removeAll(formats)
+                                resultItem?.formats?.addAll(allFormats.first().filter { !genericVideoFormats.contains(it) })
+                                if (resultItem != null){
+                                    resultViewModel.update(resultItem!!)
+                                    kotlin.runCatching {
+                                        val f1 = fragmentManager?.findFragmentByTag("f0") as DownloadAudioFragment
+                                        f1.updateUI(resultItem)
+                                    }
+                                }
                             }
                         }
-                        formats = allFormats.first().toMutableList()
+                        formats = allFormats.first().filter { !genericVideoFormats.contains(it) }.toMutableList()
                         UiUtil.populateFormatCard(requireContext(), formatCard, item.first().format, item.first().audioFormats)
                     }
                 }
                 formatCard.setOnClickListener{
                     if (parentFragmentManager.findFragmentByTag("formatSheet") == null){
-                        val bottomSheet = FormatSelectionBottomSheetDialog(listOf(downloadItem), listOf(formats), listener)
+                        val bottomSheet = FormatSelectionBottomSheetDialog(listOf(downloadItem), listOf(formats.ifEmpty { genericVideoFormats }), listener)
                         bottomSheet.show(parentFragmentManager, "formatSheet")
                     }
                 }
@@ -221,204 +264,63 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                     }
 
 
-                val embedSubs = view.findViewById<Chip>(R.id.embed_subtitles)
-                embedSubs!!.isChecked = downloadItem.videoPreferences.embedSubs
-                embedSubs.setOnClickListener {
-                    downloadItem.videoPreferences.embedSubs = embedSubs.isChecked
-                }
-
-                val addChapters = view.findViewById<Chip>(R.id.add_chapters)
-                addChapters!!.isChecked = downloadItem.videoPreferences.addChapters
-                addChapters.setOnClickListener{
-                    downloadItem.videoPreferences.addChapters = addChapters.isChecked
-                }
-
-
-                val splitByChapters = view.findViewById<Chip>(R.id.split_by_chapters)
-                if(downloadItem.downloadSections.isNotBlank()){
-                    splitByChapters.isEnabled = false
-                    splitByChapters.isChecked = false
-                }else{
-                    splitByChapters!!.isChecked = downloadItem.audioPreferences.splitByChapters
-                }
-                splitByChapters.setOnClickListener {
-                    if (splitByChapters.isChecked){
-                        addChapters.isEnabled = false
-                        addChapters.isChecked = false
-                        downloadItem.videoPreferences.addChapters = false
-                    }else{
-                        addChapters.isEnabled = true
-                    }
-                    downloadItem.videoPreferences.splitByChapters = splitByChapters.isChecked
-                }
-
-                val saveThumbnail = view.findViewById<Chip>(R.id.save_thumbnail)
-                saveThumbnail!!.isChecked = downloadItem.SaveThumb
-                saveThumbnail.setOnClickListener {
-                    downloadItem.SaveThumb = saveThumbnail.isChecked
-                }
-
-                val sponsorBlock = view.findViewById<Chip>(R.id.sponsorblock_filters)
-                sponsorBlock!!.setOnClickListener {
-                    val builder = MaterialAlertDialogBuilder(requireContext())
-                    builder.setTitle(getString(R.string.select_sponsorblock_filtering))
-                    val values = resources.getStringArray(R.array.sponsorblock_settings_values)
-                    val entries = resources.getStringArray(R.array.sponsorblock_settings_entries)
-                    val checkedItems : ArrayList<Boolean> = arrayListOf()
-                    values.forEach {
-                        if (downloadItem.videoPreferences.sponsorBlockFilters.contains(it)) {
-                            checkedItems.add(true)
-                        }else{
-                            checkedItems.add(false)
-                        }
-                    }
-
-                    builder.setMultiChoiceItems(
-                        entries,
-                        checkedItems.toBooleanArray()
-                    ) { _, which, isChecked ->
-                        checkedItems[which] = isChecked
-                    }
-
-                    builder.setPositiveButton(
-                        getString(R.string.ok)
-                    ) { _: DialogInterface?, _: Int ->
-                        downloadItem.videoPreferences.sponsorBlockFilters.clear()
-                        for (i in 0 until checkedItems.size) {
-                            if (checkedItems[i]) {
-                                downloadItem.videoPreferences.sponsorBlockFilters.add(values[i])
-                            }
-                        }
-                    }
-
-                    // handle the negative button of the alert dialog
-                    builder.setNegativeButton(
-                        getString(R.string.cancel)
-                    ) { _: DialogInterface?, _: Int -> }
-
-                    val dialog = builder.create()
-                    dialog.show()
-                }
-
-                val cut = view.findViewById<Chip>(R.id.cut)
-                if(downloadItem.duration.isNotEmpty()){
-                    cut.isEnabled = true
-                    if (downloadItem.downloadSections.isNotBlank()) cut.text = downloadItem.downloadSections
-                    val cutVideoListener = object : VideoCutListener {
-
-                        override fun onChangeCut(list: List<String>) {
-                            if (list.isEmpty()){
-                                downloadItem.downloadSections = ""
-                                cut.text = getString(R.string.cut)
-
-                                splitByChapters.isEnabled = true
-                                splitByChapters.isChecked = downloadItem.videoPreferences.splitByChapters
-                                if (splitByChapters.isChecked){
-                                    addChapters.isEnabled = false
-                                    addChapters.isChecked = false
-                                }else{
-                                    addChapters.isEnabled = true
+                view.findViewById<LinearLayout>(R.id.adjust).apply {
+                    visibility = if (shownFields.contains("adjust_video")) View.VISIBLE else View.GONE
+                    if (isVisible){
+                        UiUtil.configureVideo(
+                            view,
+                            requireActivity(),
+                            listOf(downloadItem),
+                            embedSubsClicked = {
+                                downloadItem.videoPreferences.embedSubs = it
+                            },
+                            addChaptersClicked = {
+                                downloadItem.videoPreferences.addChapters = it
+                            },
+                            splitByChaptersClicked = {
+                                downloadItem.videoPreferences.splitByChapters = it
+                            },
+                            saveThumbnailClicked = {
+                                downloadItem.SaveThumb = it
+                            },
+                            sponsorBlockItemsSet = { values, checkedItems ->
+                                downloadItem.videoPreferences.sponsorBlockFilters.clear()
+                                for (i in checkedItems.indices) {
+                                    if (checkedItems[i]) {
+                                        downloadItem.videoPreferences.sponsorBlockFilters.add(values[i])
+                                    }
                                 }
-                            }else{
-                                var value = ""
-                                list.forEach {
-                                    value += "$it;"
+                            },
+                            cutClicked = { cutVideoListener ->
+                                if (parentFragmentManager.findFragmentByTag("cutVideoSheet") == null){
+                                    val bottomSheet = CutVideoBottomSheetDialog(downloadItem, resultItem?.urls ?: "", resultItem?.chapters ?: listOf(), cutVideoListener)
+                                    bottomSheet.show(parentFragmentManager, "cutVideoSheet")
                                 }
-                                downloadItem.downloadSections = value
-                                cut.text = value.dropLast(1)
+                            },
+                            filenameTemplateSet = {
+                                downloadItem.customFileNameTemplate = it
+                            },
+                            saveSubtitlesClicked = {
+                                downloadItem.videoPreferences.writeSubs = it
+                            },
+                            subtitleLanguagesSet = {
+                                downloadItem.videoPreferences.subsLanguages = it
+                            },
+                            removeAudioClicked = {
+                                downloadItem.videoPreferences.removeAudio = it
+                            },
+                            extraCommandsClicked = {
+                                val callback = object : ExtraCommandsListener {
+                                    override fun onChangeExtraCommand(c: String) {
+                                        downloadItem.extraCommands = c
+                                    }
+                                }
 
-                                splitByChapters.isEnabled = false
-                                splitByChapters.isChecked = false
-                                addChapters.isEnabled = true
+                                val bottomSheetDialog = AddExtraCommandsDialog(downloadItem, callback)
+                                bottomSheetDialog.show(parentFragmentManager, "extraCommands")
                             }
-
-                        }
+                        )
                     }
-                    cut.setOnClickListener {
-                        if (parentFragmentManager.findFragmentByTag("cutVideoSheet") == null){
-                            val bottomSheet = CutVideoBottomSheetDialog(downloadItem, resultItem.urls, resultItem.chapters, cutVideoListener)
-                            bottomSheet.show(parentFragmentManager, "cutVideoSheet")
-                        }
-                    }
-                }else{
-                    cut.isEnabled = false
-                }
-
-                val filenameTemplate = view.findViewById<Chip>(R.id.filename_template)
-                filenameTemplate.setOnClickListener {
-                    val builder = MaterialAlertDialogBuilder(requireContext())
-                    builder.setTitle(getString(R.string.file_name_template))
-                    val inputLayout = layoutInflater.inflate(R.layout.textinput, null)
-                    val editText = inputLayout.findViewById<EditText>(R.id.url_edittext)
-                    inputLayout.findViewById<TextInputLayout>(R.id.url_textinput).hint = getString(R.string.file_name_template)
-                    editText.setText(downloadItem.customFileNameTemplate)
-                    editText.setSelection(editText.text.length)
-                    builder.setView(inputLayout)
-                    builder.setPositiveButton(
-                        getString(R.string.ok)
-                    ) { _: DialogInterface?, _: Int ->
-                        downloadItem.customFileNameTemplate = editText.text.toString()
-                    }
-
-                    // handle the negative button of the alert dialog
-                    builder.setNegativeButton(
-                        getString(R.string.cancel)
-                    ) { _: DialogInterface?, _: Int -> }
-
-                    val dialog = builder.create()
-                    editText.doOnTextChanged { _, _, _, _ ->
-                        dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = editText.text.isNotEmpty()
-                    }
-                    dialog.show()
-                    val imm = context?.getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as InputMethodManager
-                    editText!!.postDelayed({
-                        editText.requestFocus()
-                        imm.showSoftInput(editText, 0)
-                    }, 300)
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = editText.text.isNotEmpty()
-                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL).gravity = Gravity.START
-                }
-
-                val saveSubtitles = view.findViewById<Chip>(R.id.save_subtitles)
-                val subtitleLanguages = view.findViewById<Chip>(R.id.subtitle_languages)
-                downloadItem.videoPreferences.subsLanguages = sharedPreferences.getString("subs_lang", "en.*,.*-orig")!!
-                if (downloadItem.videoPreferences.writeSubs) {
-                    saveSubtitles.isChecked = true
-                    subtitleLanguages.visibility = View.VISIBLE
-                }
-
-                saveSubtitles.setOnCheckedChangeListener { _, _ ->
-                    if (saveSubtitles.isChecked) subtitleLanguages.visibility = View.VISIBLE
-                    else subtitleLanguages.visibility = View.GONE
-                    downloadItem.videoPreferences.writeSubs = saveSubtitles.isChecked
-                }
-
-                subtitleLanguages.setOnClickListener {
-                    UiUtil.showSubtitleLanguagesDialog(requireActivity(), downloadItem.videoPreferences.subsLanguages){
-                        downloadItem.videoPreferences.subsLanguages = it
-                    }
-                }
-
-                val removeAudio = view.findViewById<Chip>(R.id.remove_audio)
-                removeAudio.setOnCheckedChangeListener { _, _ ->
-                    downloadItem.videoPreferences.removeAudio = removeAudio.isChecked
-                }
-
-                val extraCommands = view.findViewById<Chip>(R.id.extra_commands)
-                if (sharedPreferences.getBoolean("use_extra_commands", false)){
-                    extraCommands.visibility = View.VISIBLE
-                    extraCommands.setOnClickListener {
-                        val callback = object : ExtraCommandsListener {
-                            override fun onChangeExtraCommand(c: String) {
-                                downloadItem.extraCommands = c
-                            }
-                        }
-
-                        val bottomSheetDialog = AddExtraCommandsDialog(downloadItem, callback)
-                        bottomSheetDialog.show(parentFragmentManager, "extraCommands")
-                    }
-                }else{
-                    extraCommands.visibility = View.GONE
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -426,7 +328,23 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
         }
     }
 
-    private var videoPathResultLauncher = registerForActivityResult(
+    override fun updateTitleAuthor(t: String, a: String){
+        downloadItem.title = t
+        downloadItem.author = a
+        title.editText?.setText(t)
+        title.endIconMode = END_ICON_NONE
+        author.editText?.setText(a)
+        title.endIconMode = END_ICON_NONE
+    }
+
+    override fun updateUI(res: ResultItem?) {
+        resultItem = res
+        val state = Bundle()
+        state.putBoolean("updated", true)
+        onViewCreated(requireView(),savedInstanceState = state)
+    }
+
+    private var pathResultLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -437,6 +355,7 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                             Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 )
             }
+
             downloadItem.downloadPath = result.data?.data.toString()
             saveDir.editText?.setText(FileUtil.formatPath(result.data?.data.toString()), TextView.BufferType.EDITABLE)
 
@@ -444,6 +363,7 @@ class DownloadVideoFragment(private val resultItem: ResultItem, private var curr
                 File(FileUtil.formatPath(downloadItem.downloadPath)).freeSpace)
             freeSpace.text = String.format( getString(R.string.freespace) + ": " + free)
             if (free == "?") freeSpace.visibility = View.GONE
+
         }
     }
 

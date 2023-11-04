@@ -5,22 +5,18 @@ import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.os.storage.StorageManager
-import android.os.storage.StorageVolume
 import android.provider.DocumentsContract
 import android.util.Log
 import android.webkit.MimeTypeMap
-import androidx.core.net.toFile
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import com.anggrayudi.storage.callback.FileCallback
 import com.anggrayudi.storage.callback.FolderCallback
-import com.anggrayudi.storage.file.copyFileTo
 import com.anggrayudi.storage.file.copyFolderTo
 import com.anggrayudi.storage.file.getAbsolutePath
-import com.anggrayudi.storage.file.getBasePath
+import com.anggrayudi.storage.file.moveFileTo
 import com.deniscerri.ytdlnis.App
-import com.deniscerri.ytdlnis.R
+import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.internal.closeQuietly
@@ -32,6 +28,7 @@ import java.nio.file.StandardCopyOption
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.*
+import kotlin.io.path.absolutePathString
 import kotlin.math.log10
 import kotlin.math.pow
 
@@ -56,6 +53,9 @@ object FileUtil {
         var dataValue = path
         if (dataValue.startsWith("/storage/")) return dataValue
         dataValue = dataValue.replace("content://com.android.externalstorage.documents/tree/", "")
+        dataValue = dataValue.replace("raw:/storage/", "")
+        dataValue = dataValue.replace("^/document/".toRegex(), "")
+        dataValue = dataValue.replace("^primary:".toRegex(), "primary/")
         dataValue = dataValue.replace("%3A".toRegex(), "/")
         try {
             dataValue = URLDecoder.decode(dataValue, StandardCharsets.UTF_8.name())
@@ -87,13 +87,51 @@ object FileUtil {
                 if (it.isDirectory && it.absolutePath == originDir.absolutePath) return@forEach
                 var destFile: DocumentFile
                 try {
-                    if (it.name.matches("(^config.*.\\.txt\$)|(rList)|(part-Frag)".toRegex())){
-                        it.delete()
+                    if (it.name.matches("(^config.*.\\.txt\$)|(rList)|(.*.part-Frag)|(.*.live_chat)".toRegex())){
                         return@forEach
                     }
 
-                    if(it.name.contains(".part-Frag")) return@forEach
+                    runCatching {
+                        if (File(formatPath(destDir)).canWrite()){
+                            val files = it.listFiles()?.filter { fil -> !fil.isDirectory }?.toTypedArray() ?: arrayOf(it)
+                            for (ff in files){
+                                val newFile =  File(dir.absolutePath + "/${ff.absolutePath.removePrefix(originDir.absolutePath)}")
+                                runCatching {
+                                    newFile.parentFile?.mkdirs()
+                                }
+                                if (Build.VERSION.SDK_INT >= 26 ) {
+                                    var newFileName = newFile.absolutePath
+                                    var counter = 1
+                                    while (Files.exists(File(newFileName).toPath())) {
+                                        // If the file already exists in the destination directory, add a number to differentiate it
+                                        newFileName = newFile.absolutePath.replace(newFile.nameWithoutExtension, newFile.nameWithoutExtension+" ($counter)")
+                                        counter++
+                                    }
 
+                                    fileList.add(Files.move(
+                                        ff.toPath(),
+                                        File(newFileName).toPath(),
+                                        StandardCopyOption.REPLACE_EXISTING
+                                    ).absolutePathString())
+                                    ff.delete()
+                                    fileList.add(newFileName)
+                                }else{
+                                    var newFileName = newFile.absolutePath
+                                    var counter = 1
+                                    while (File(newFileName).exists()) {
+                                        // If the file already exists in the destination directory, add a number to differentiate it
+                                        newFileName = newFile.absolutePath.replace(newFile.nameWithoutExtension, newFile.nameWithoutExtension+" ($counter)")
+                                        counter++
+                                    }
+
+                                    ff.copyTo(File(newFileName),false)
+                                    ff.delete()
+                                    fileList.add(newFileName)
+                                }
+                            }
+                            return@forEach
+                        }
+                    }
 
                     val curr = DocumentFile.fromFile(it)
                     val dst =  DocumentFile.fromTreeUri(context, destDir.toUri())
@@ -127,23 +165,7 @@ object FileUtil {
                                     runCatching {
                                         it.walkTopDown().forEach { f ->
                                             if (f.isDirectory) return@forEach
-
-                                            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension) ?: "*/*"
-
-                                            val destUri = DocumentsContract.createDocument(
-                                                context.contentResolver,
-                                                dst.uri,
-                                                mimeType,
-                                                f.name
-                                            ) ?: return@runCatching
-
-                                            val inputStream = f.inputStream()
-                                            val outputStream =
-                                                context.contentResolver.openOutputStream(destUri) ?: return@runCatching
-                                            inputStream.copyTo(outputStream)
-                                            inputStream.closeQuietly()
-                                            outputStream.closeQuietly()
-
+                                            val destUri = moveFileInputStream(it, context, dst) ?: return@forEach
                                             fileList.add(DocumentFile.fromSingleUri(context, destUri)!!.getAbsolutePath(context))
                                         }
 
@@ -156,34 +178,26 @@ object FileUtil {
                         }
                     }else{
                         withContext(Dispatchers.IO){
-                            curr.copyFileTo(context, dst!!, callback = object : FileCallback() {
+                            curr.moveFileTo(context, dst!!, callback = object : FileCallback() {
                                 override fun onFailed(errorCode: ErrorCode) {
                                     //if its usb?
                                     runCatching {
-                                        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.extension) ?: "*/*"
-
-                                        val destUri = DocumentsContract.createDocument(
-                                            context.contentResolver,
-                                            dst.uri,
-                                            mimeType,
-                                            it.name
-                                        ) ?: return@runCatching
-
-                                        val inputStream = it.inputStream()
-                                        val outputStream =
-                                            context.contentResolver.openOutputStream(destUri) ?: return@runCatching
-                                        inputStream.copyTo(outputStream)
-                                        inputStream.closeQuietly()
-                                        outputStream.closeQuietly()
-
+                                        val destUri = moveFileInputStream(it, context, dst) ?: return
                                         fileList.add(DocumentFile.fromSingleUri(context, destUri)!!.getAbsolutePath(context))
                                         it.delete()
                                     }
                                     super.onFailed(errorCode)
                                 }
 
+                                override fun onConflict(
+                                    destinationFile: DocumentFile,
+                                    action: FileConflictAction
+                                ) {
+                                    action.confirmResolution(ConflictResolution.CREATE_NEW)
+                                }
+
                                 override fun onStart(file: Any, workerThread: Thread): Long {
-                                    return 1000 // update progress every 1 second
+                                    return 500 // update progress every 1 second
                                 }
 
                                 override fun onReport(report: Report) {
@@ -201,22 +215,6 @@ object FileUtil {
                     }
                 }catch (e: Exception) {
                     Log.e("error", e.message.toString())
-                    val files = it.listFiles()?.filter { fil -> !fil.isDirectory }?.toTypedArray() ?: arrayOf(it)
-                    for (ff in files){
-                        val newFile =  File(dir.absolutePath + "/${ff.absolutePath.removePrefix(originDir.absolutePath)}")
-                        newFile.mkdirs()
-                        if (Build.VERSION.SDK_INT >= 26 ) {
-                            Files.move(
-                                ff.toPath(),
-                                newFile.toPath(),
-                                StandardCopyOption.REPLACE_EXISTING
-                            )
-                        }else{
-                            ff.renameTo(newFile)
-                        }
-                        fileList.add(newFile.absolutePath)
-                    }
-                    return@forEach
                 }
 
             }
@@ -226,36 +224,83 @@ object FileUtil {
             return@withContext scanMedia(fileList, context)
         }
     }
-    private fun scanMedia(files: List<String>, context: Context) : List<String> {
+
+    private fun moveFileInputStream(it: File, context: Context, dst: DocumentFile) : Uri? {
+        val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(it.extension) ?: "*/*"
+
+        val destUri = DocumentsContract.createDocument(
+            context.contentResolver,
+            dst.uri,
+            mimeType,
+            it.name
+        ) ?: return null
+
+        val inputStream = it.inputStream()
+        val outputStream =
+            context.contentResolver.openOutputStream(destUri) ?: return null
+        inputStream.copyTo(outputStream)
+        inputStream.closeQuietly()
+        outputStream.closeQuietly()
+
+        return destUri
+    }
+
+    fun scanMedia(files: List<String>, context: Context) : List<String> {
         try {
             val paths = files.sortedByDescending { File(it).length() }
-            runCatching {MediaScannerConnection.scanFile(context, paths.toTypedArray(), null, null) }
+            runCatching {
+                paths.forEach {
+                    MediaScannerConnection.scanFile(context, arrayOf(it), null, null)
+                }
+            }
             return paths
         }catch (e: Exception){
             e.printStackTrace()
         }
 
-        return listOf(context.getString(R.string.unfound_file))
+        return listOf()
     }
 
+    fun getCachePath(context: Context) : String {
+        return context.cacheDir.absolutePath + "/downloads/"
+    }
+
+    fun deleteConfigFiles(request: YoutubeDLRequest) {
+        request.getArguments("--config")?.forEach {
+            if (it != null) File(it).delete()
+        }
+        request.getArguments("--config-locations")?.forEach {
+            if (it != null) File(it).delete()
+        }
+    }
 
     fun getDefaultAudioPath() : String{
-        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + File.separator + "YTDLnis/Audio"
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath + File.separator + "YTDLnis/Audio"
     }
 
     fun getDefaultVideoPath() : String{
-        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + File.separator + "YTDLnis/Video"
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath + File.separator + "YTDLnis/Video"
     }
 
     fun getDefaultCommandPath() : String {
-        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS).absolutePath + File.separator + "YTDLnis/Command"
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath + File.separator + "YTDLnis/Command"
+    }
+
+    fun getDefaultTerminalPath() : String {
+        return Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)?.absolutePath + File.separator + "YTDLnis/TERMINAL_CACHE"
+    }
+
+    fun getCookieFile(context : Context, path: (path: String) -> Unit){
+        val cookiesFile = File(context.cacheDir, "cookies.txt")
+        if (cookiesFile.exists()) path(cookiesFile.absolutePath)
     }
 
     fun convertFileSize(s: Long): String{
-        if (s <= 0) return "?"
+        if (s <= 1) return "?"
         val units = arrayOf("B", "kB", "MB", "GB", "TB")
         val digitGroups = (log10(s.toDouble()) / log10(1024.0)).toInt()
         val symbols = DecimalFormatSymbols(Locale.US)
         return "${DecimalFormat("#,##0.#", symbols).format(s / 1024.0.pow(digitGroups.toDouble()))} ${units[digitGroups]}"
     }
+
 }

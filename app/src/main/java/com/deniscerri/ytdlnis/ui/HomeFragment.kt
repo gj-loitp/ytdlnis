@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Editable
 import android.util.Log
+import android.util.Patterns
 import android.view.*
 import android.view.View.*
 import android.widget.*
@@ -30,7 +31,8 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.deniscerri.ytdlnis.MainActivity
 import com.deniscerri.ytdlnis.R
-import com.deniscerri.ytdlnis.adapter.HomeAdapter
+import com.deniscerri.ytdlnis.ui.adapter.HomeAdapter
+import com.deniscerri.ytdlnis.database.models.DownloadItem
 import com.deniscerri.ytdlnis.database.models.ResultItem
 import com.deniscerri.ytdlnis.database.viewmodel.DownloadViewModel
 import com.deniscerri.ytdlnis.database.viewmodel.ResultViewModel
@@ -39,6 +41,8 @@ import com.deniscerri.ytdlnis.ui.downloadcard.DownloadMultipleBottomSheetDialog
 import com.deniscerri.ytdlnis.ui.downloadcard.ResultCardDetailsDialog
 import com.deniscerri.ytdlnis.util.InfoUtil
 import com.deniscerri.ytdlnis.util.ThemeUtil
+import com.deniscerri.ytdlnis.util.UiUtil
+import com.deniscerri.ytdlnis.util.UiUtil.enableFastScroll
 import com.facebook.shimmer.ShimmerFrameLayout
 import com.google.android.material.appbar.AppBarLayout
 import com.google.android.material.appbar.MaterialToolbar
@@ -50,7 +54,10 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton
 import com.google.android.material.search.SearchBar
 import com.google.android.material.search.SearchView
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.*
@@ -102,6 +109,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         activity = getActivity()
         mainActivity = activity as MainActivity?
         quickLaunchSheet = false
+        infoUtil = InfoUtil(requireContext())
         return fragmentView
     }
 
@@ -133,6 +141,9 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         searchSuggestionsLinearLayout = view.findViewById(R.id.search_suggestions_linear_layout)
         searchHistory = view.findViewById(R.id.search_history_scroll_view)
         searchHistoryLinearLayout = view.findViewById(R.id.search_history_linear_layout)
+        homeFabs = view.findViewById(R.id.home_fabs)
+        downloadFabs = homeFabs!!.findViewById(R.id.download_selected_coordinator)
+        downloadAllFabCoordinator = homeFabs!!.findViewById(R.id.download_all_coordinator)
 
         runCatching { materialToolbar!!.title = ThemeUtil.getStyledAppName(requireContext()) }
 
@@ -144,13 +155,14 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         recyclerView = view.findViewById(R.id.recyclerViewHome)
         recyclerView?.layoutManager = GridLayoutManager(context, resources.getInteger(R.integer.grid_size))
         recyclerView?.adapter = homeAdapter
+        recyclerView?.enableFastScroll()
 
         resultViewModel = ViewModelProvider(this)[ResultViewModel::class.java]
         resultViewModel.items.observe(viewLifecycleOwner) {
             homeAdapter!!.submitList(it)
             resultsList = it
             if(resultViewModel.repository.itemCount.value > 1 || resultViewModel.repository.itemCount.value == -1){
-                if (it.size > 1 && it[0].playlistTitle.isNotEmpty() && it[0].playlistTitle != getString(R.string.trendingPlaylist) && !loadingItems){
+                if (it.size > 1 && it[0].playlistTitle.isNotEmpty() && !loadingItems){
                     downloadAllFabCoordinator!!.visibility = VISIBLE
                 }else{
                     downloadAllFabCoordinator!!.visibility = GONE
@@ -158,7 +170,10 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
             }else if (resultViewModel.repository.itemCount.value == 1){
                 if (sharedPreferences!!.getBoolean("download_card", true)){
                     if(it.size == 1 && quickLaunchSheet && parentFragmentManager.findFragmentByTag("downloadSingleSheet") == null){
-                        showSingleDownloadSheet(it[0], DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!), false)
+                        showSingleDownloadSheet(
+                            it[0],
+                            DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                        )
                     }
                 }
             }else{
@@ -167,30 +182,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
             quickLaunchSheet = true
         }
 
-
-        resultViewModel.loadingItems.observe(viewLifecycleOwner){
-            loadingItems = it
-            if (it){
-                recyclerView?.setPadding(0,0,0,0)
-                shimmerCards!!.startShimmer()
-                shimmerCards!!.visibility = VISIBLE
-            }else{
-                recyclerView?.setPadding(0,0,0,100)
-                shimmerCards!!.stopShimmer()
-                shimmerCards!!.visibility = GONE
-                if (resultsList!!.size > 1 && resultsList!![0]!!.playlistTitle.isNotEmpty() && resultsList!![0]!!.playlistTitle != getString(R.string.trendingPlaylist)){
-                    downloadAllFabCoordinator!!.visibility = VISIBLE
-                }else{
-                    downloadAllFabCoordinator!!.visibility = GONE
-                }
-            }
-        }
-
         initMenu()
-
-        homeFabs = view.findViewById(R.id.home_fabs)
-        downloadFabs = homeFabs!!.findViewById(R.id.download_selected_coordinator)
-        downloadAllFabCoordinator = homeFabs!!.findViewById(R.id.download_all_coordinator)
         val downloadSelectedFab = downloadFabs!!.findViewById<ExtendedFloatingActionButton>(R.id.download_selected_fab)
         downloadSelectedFab.tag = "downloadSelected"
         downloadSelectedFab.setOnClickListener(this)
@@ -202,7 +194,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         if (arguments?.getString("url") != null){
             val url = requireArguments().getString("url")
             if (inputQueries == null) inputQueries = mutableListOf()
-            searchBar?.text = url
+            searchBar?.setText(url)
             val argList = url!!.split("\n").toMutableList()
             argList.removeAll(listOf("", null))
             inputQueries!!.addAll(argList)
@@ -232,15 +224,58 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
             }
         }
 
+        lifecycleScope.launch {
+            launch{
+                resultViewModel.uiState.collectLatest { res ->
+                    if (res.errorMessage != null){
+                        kotlin.runCatching { UiUtil.handleResultResponse(requireActivity(), res, closed ={}) }
+                        resultViewModel.uiState.update {it.copy(errorMessage  = null, actions  = null) }
+                    }
+
+                    loadingItems = res.processing
+                    if (res.processing){
+                        recyclerView?.setPadding(0,0,0,0)
+                        shimmerCards!!.startShimmer()
+                        shimmerCards!!.visibility = VISIBLE
+                    }else{
+                        recyclerView?.setPadding(0,0,0,100)
+                        shimmerCards!!.stopShimmer()
+                        shimmerCards!!.visibility = GONE
+                        if (resultsList!!.size > 1 && resultsList!![0]!!.playlistTitle.isNotEmpty()){
+                            downloadAllFabCoordinator!!.visibility = VISIBLE
+                        }else{
+                            downloadAllFabCoordinator!!.visibility = GONE
+                        }
+                    }
+                }
+            }
+        }
+
     }
 
     override fun onResume() {
         super.onResume()
         if(arguments?.getString("url") == null){
-            resultViewModel.checkTrending()
+            if (!resultViewModel.uiState.value.processing){
+                resultViewModel.checkTrending()
+            }
         }else{
             arguments?.remove("url")
         }
+
+        if (arguments?.getBoolean("showDownloadsWithUpdatedFormats") == true){
+            arguments?.remove("showDownloadsWithUpdatedFormats")
+            CoroutineScope(Dispatchers.IO).launch {
+                val ids = arguments?.getLongArray("downloadIds")
+                val items = mutableListOf<DownloadItem>()
+                ids?.forEach {
+                    items.add(downloadViewModel.getItemByID(it))
+                }
+                val bottomSheet = DownloadMultipleBottomSheetDialog(items.toMutableList())
+                bottomSheet.show(parentFragmentManager, "downloadMultipleSheet")
+            }
+        }
+
         if (searchView?.currentTransitionState == SearchView.TransitionState.SHOWN){
             lifecycleScope.launch {
                 updateSearchViewItems(searchView?.editText?.text, linkYouCopied)
@@ -257,7 +292,6 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         val providersChipGroup = searchView!!.findViewById<ChipGroup>(R.id.providers)
         val providers = resources.getStringArray(R.array.search_engines)
         val providersValues = resources.getStringArray(R.array.search_engines_values).toMutableList()
-        val currentProvider = sharedPreferences?.getString("search_engine", "ytsearch")
 
         for(i in providersValues.indices){
             val provider = providers[i]
@@ -265,8 +299,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
             val tmp = layoutinflater!!.inflate(R.layout.filter_chip, providersChipGroup, false) as Chip
             tmp.text = provider
             tmp.id = i
-
-            if (currentProvider == providerValue) tmp.isChecked = true
+            tmp.tag = providersValues[i]
 
             tmp.setOnClickListener {
                 val editor = sharedPreferences?.edit()
@@ -279,9 +312,17 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         }
 
 
-        infoUtil = InfoUtil(requireContext())
         searchView!!.addTransitionListener { _, _, newState ->
             if (newState == SearchView.TransitionState.SHOWN) {
+                val currentProvider = sharedPreferences?.getString("search_engine", "ytsearch")
+                providersChipGroup.children.forEach {
+                    val tmp = providersChipGroup.findViewById<Chip>(it.id)
+                    if (tmp.tag == currentProvider) {
+                        tmp.isChecked = true
+                        return@forEach
+                    }
+                }
+
                 try{
                     val clipboard =
                         requireContext().getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -378,7 +419,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
                 R.id.delete_results -> {
                     resultViewModel.getTrending()
                     selectedObjects = ArrayList()
-                    searchBar!!.text = ""
+                    searchBar!!.setText("")
                     downloadAllFabCoordinator!!.visibility = GONE
                     downloadFabs!!.visibility = GONE
                 }
@@ -401,12 +442,12 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
     }
 
     @SuppressLint("InflateParams")
-    private suspend fun updateSearchViewItems(it: Editable?, linkYouCopied: View?){
+    private suspend fun updateSearchViewItems(searchQuery: Editable?, linkYouCopied: View?){
+        searchSuggestionsLinearLayout!!.visibility = GONE
+        searchHistoryLinearLayout!!.visibility = GONE
         searchSuggestionsLinearLayout!!.removeAllViews()
         searchHistoryLinearLayout!!.removeAllViews()
 
-        searchSuggestionsLinearLayout!!.visibility = GONE
-        searchHistoryLinearLayout!!.visibility = GONE
         linkYouCopied!!.visibility = GONE
 
         if (searchView!!.editText.text.isEmpty()){
@@ -415,16 +456,15 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
             searchView!!.editText.setCompoundDrawablesRelativeWithIntrinsicBounds(0, 0, R.drawable.ic_plus, 0)
         }
         val suggestions = withContext(Dispatchers.IO){
-            if (it!!.isEmpty()) {
-                resultViewModel.getSearchHistory().map { it.query }
-            }else if (sharedPreferences!!.getBoolean("search_suggestions", false)){
-                infoUtil!!.getSearchSuggestions(it.toString())
+            resultViewModel.getSearchHistory().map { it.query }.filter { it.contains(searchQuery!!) } +
+            if (sharedPreferences!!.getBoolean("search_suggestions", false)){
+                infoUtil!!.getSearchSuggestions(searchQuery.toString())
             }else{
                 emptyList()
             }
         }
 
-        if (it!!.isEmpty()){
+        if (searchQuery!!.isEmpty()){
             for (i in suggestions.indices) {
                 val v = LayoutInflater.from(fragmentContext)
                     .inflate(R.layout.search_suggestion_item, null)
@@ -505,7 +545,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
 
         if (queryList.isEmpty()) return
         if (queryList.size == 1){
-            searchBar!!.text = searchView.text
+            searchBar!!.setText(searchView.text)
         }
 
         searchView.hide()
@@ -517,15 +557,20 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         resultViewModel.deleteAll()
         lifecycleScope.launch(Dispatchers.IO){
             Thread.sleep(300)
-            if(sharedPreferences!!.getBoolean("quick_download", false)){
-                if (queryList.size == 1 && queryList.first().matches("(https?://(?:www\\.|(?!www))[a-zA-Z\\d][a-zA-Z\\d-]+[a-zA-Z\\d]\\.\\S{2,}|www\\.[a-zA-Z\\d][a-zA-Z\\d-]+[a-zA-Z\\d]\\.\\S{2,}|https?://(?:www\\.|(?!www))[a-zA-Z\\d]+\\.\\S{2,}|www\\.[a-zA-Z\\d]+\\.\\S{2,})".toRegex())){
-                    val resultItem = downloadViewModel.createEmptyResultItem(queryList.first())
+            if(sharedPreferences!!.getBoolean("quick_download", false) || sharedPreferences!!.getString("preferred_download_type", "video") == "command"){
+                if (queryList.size == 1 && Patterns.WEB_URL.matcher(queryList.first()).matches()){
                     if (sharedPreferences!!.getBoolean("download_card", true)) {
-                        showSingleDownloadSheet(resultItem, DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!), true)
+                        showSingleDownloadSheet(
+                            resultItem = downloadViewModel.createEmptyResultItem(queryList.first()),
+                            type = DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                        )
                     } else {
                         lifecycleScope.launch{
                             val downloadItem = withContext(Dispatchers.IO){
-                                downloadViewModel.createDownloadItemFromResult(resultItem, DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!))
+                                downloadViewModel.createDownloadItemFromResult(
+                                    result = downloadViewModel.createEmptyResultItem(queryList.first()),
+                                    givenType = DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!)
+                                )
                             }
                             downloadViewModel.queueDownloads(listOf(downloadItem))
                         }
@@ -552,11 +597,13 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
         Log.e(TAG, resultsList!![0].toString() + " " + videoURL)
         recyclerView!!.findViewWithTag<MaterialButton>("""${item?.url}##$type""")
         if (sharedPreferences!!.getBoolean("download_card", true)) {
-            showSingleDownloadSheet(item!!, type!!, false)
+            showSingleDownloadSheet(item!!, type!!)
         } else {
             lifecycleScope.launch{
                 val downloadItem = withContext(Dispatchers.IO){
-                    downloadViewModel.createDownloadItemFromResult(item!!, type!!)
+                    downloadViewModel.createDownloadItemFromResult(
+                        result = item!!,
+                        givenType = type!!)
                 }
                 downloadViewModel.queueDownloads(listOf(downloadItem))
             }
@@ -566,11 +613,14 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
     override fun onLongButtonClick(videoURL: String, type: DownloadViewModel.Type?) {
         Log.e(TAG, type.toString() + " " + videoURL)
         val item = resultsList!!.find { it?.url == videoURL }
-        showSingleDownloadSheet(item!!, type!!, false)
+        showSingleDownloadSheet(item!!, type!!)
     }
 
-    private fun showSingleDownloadSheet(resultItem : ResultItem, type: DownloadViewModel.Type, quickDownload: Boolean){
-        val bottomSheet = DownloadBottomSheetDialog(resultItem, type, null, quickDownload)
+    private fun showSingleDownloadSheet(
+        resultItem: ResultItem,
+        type: DownloadViewModel.Type
+    ){
+        val bottomSheet = DownloadBottomSheetDialog(resultItem, downloadViewModel.getDownloadType(type, resultItem.url))
         bottomSheet.show(parentFragmentManager, "downloadSingleSheet")
     }
 
@@ -612,7 +662,7 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
                         downloadViewModel.turnResultItemsToDownloadItems(resultsList!!)
                     }
                     if (sharedPreferences!!.getBoolean("download_card", true)) {
-                        val bottomSheet = DownloadMultipleBottomSheetDialog(resultsList!!, downloadList.toMutableList())
+                        val bottomSheet = DownloadMultipleBottomSheetDialog(downloadList.toMutableList())
                         bottomSheet.show(parentFragmentManager, "downloadMultipleSheet")
                     } else {
                         downloadViewModel.queueDownloads(downloadList)
@@ -663,19 +713,18 @@ class HomeFragment : Fragment(), HomeAdapter.OnItemClickListener, OnClickListene
                 R.id.download -> {
                     lifecycleScope.launch {
                         if (sharedPreferences!!.getBoolean("download_card", true) && selectedObjects!!.size == 1) {
-                            showSingleDownloadSheet(selectedObjects!![0], DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!), false)
+                            showSingleDownloadSheet(
+                                selectedObjects!![0],
+                                downloadViewModel.getDownloadType(url = selectedObjects!![0].url)
+                            )
                         }else{
                             val downloadList = withContext(Dispatchers.IO){
                                 downloadViewModel.turnResultItemsToDownloadItems(selectedObjects!!)
                             }
 
                             if (sharedPreferences!!.getBoolean("download_card", true)) {
-                                if (selectedObjects!!.size == 1){
-                                    showSingleDownloadSheet(selectedObjects!![0], DownloadViewModel.Type.valueOf(sharedPreferences!!.getString("preferred_download_type", "video")!!), false)
-                                }else{
-                                    val bottomSheet = DownloadMultipleBottomSheetDialog(selectedObjects!!, downloadList.toMutableList())
-                                    bottomSheet.show(parentFragmentManager, "downloadMultipleSheet")
-                                }
+                                val bottomSheet = DownloadMultipleBottomSheetDialog(downloadList.toMutableList())
+                                bottomSheet.show(parentFragmentManager, "downloadMultipleSheet")
                             } else {
                                 downloadViewModel.queueDownloads(downloadList)
                             }

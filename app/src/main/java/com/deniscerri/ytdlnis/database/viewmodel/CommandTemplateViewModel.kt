@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context.CLIPBOARD_SERVICE
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
+import androidx.lifecycle.MediatorLiveData
+import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.deniscerri.ytdlnis.database.DBManager
@@ -21,15 +23,56 @@ import kotlinx.serialization.json.Json
 
 class CommandTemplateViewModel(private val application: Application) : AndroidViewModel(application) {
     private val repository: CommandTemplateRepository
-    val items: LiveData<List<CommandTemplate>>
+    val sortOrder = MutableLiveData(DBManager.SORTING.DESC)
+    val sortType = MutableLiveData(CommandTemplateRepository.CommandTemplateSortType.DATE)
+    private val queryFilter = MutableLiveData("")
+
+    val allItems: LiveData<List<CommandTemplate>>
+    private var _items = MediatorLiveData<List<CommandTemplate>>()
+
     val shortcuts : LiveData<List<TemplateShortcut>>
     private val jsonFormat = Json { prettyPrint = true }
 
     init {
         val dao = DBManager.getInstance(application).commandTemplateDao
         repository = CommandTemplateRepository(dao)
-        items = repository.items.asLiveData()
+        allItems = repository.items.asLiveData()
         shortcuts = repository.shortcuts.asLiveData()
+
+        _items.addSource(allItems){
+            filter(queryFilter.value!!, sortType.value!!, sortOrder.value!!)
+        }
+
+        _items.addSource(sortType){
+            filter(queryFilter.value!!, sortType.value!!, sortOrder.value!!)
+        }
+
+        _items.addSource(queryFilter){
+            filter(queryFilter.value!!,  sortType.value!!, sortOrder.value!!)
+        }
+    }
+
+    fun getFilteredList() : LiveData<List<CommandTemplate>>{
+        return _items
+    }
+
+    fun setSorting(sort: CommandTemplateRepository.CommandTemplateSortType){
+        if (sortType.value != sort){
+            sortOrder.value = DBManager.SORTING.DESC
+        }else{
+            sortOrder.value = if (sortOrder.value == DBManager.SORTING.DESC) {
+                DBManager.SORTING.ASC
+            } else DBManager.SORTING.DESC
+        }
+        sortType.value = sort
+    }
+
+    private fun filter(query : String, sortType: CommandTemplateRepository.CommandTemplateSortType, sort: DBManager.SORTING) = viewModelScope.launch(Dispatchers.IO){
+        _items.postValue(repository.getFiltered(query, sortType, sort))
+    }
+
+    fun setQueryFilter(filter: String){
+        queryFilter.value = filter
     }
 
     fun getTemplate(itemId: Long): CommandTemplate {
